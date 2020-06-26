@@ -1521,19 +1521,19 @@ class Bats2d(IdlFile):
         
         # Set range over which to place lines.  Use keyword values OR
         # axes ranges OR full domain (in that order).
-        if xlim == None:
+        if xlim is None:
             if use_ax_lims:
                 xlim = ax.get_xlim()
             else:
                 xlim = [self[dims[0]].min(), self[dims[0]].max()]
-        if ylim == None:
+        if ylim is None:
             if use_ax_lims:
                 ylim = ax.get_ylim()
             else:
                 ylim = [self[dims[1]].min(), self[dims[1]].max()]
 
         # If initial source points not given, create a random set:
-        if not start_points:
+        if start_points is None:
             # Get random points.
             start_points = sample( [nlines, 2] )
             # Scale to limits:
