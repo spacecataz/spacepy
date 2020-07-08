@@ -24,7 +24,7 @@ import spacepy.pybats.gitm as gitm
 
 __all__ = ['TestParseFileTime', 'TestIdlFile', 'TestRim', 'TestBats2d',
            'TestMagGrid', 'TestSatOrbit', 'TestVirtSat', 'TestImfInput',
-           'TestExtraction', 'TestParsers']
+           'TestExtraction', 'TestParsers', 'TestPlotHelpers', 'TestLogFile']
 
 class TestParseFileTime(unittest.TestCase):
     '''
