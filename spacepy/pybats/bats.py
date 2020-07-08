@@ -687,7 +687,7 @@ class Bats2d(IdlFile):
             if self['grid'].attrs['gtype'] != 'Regular':
                 xdim, ydim = self['grid'].attrs['dims'][0:2]
                 try:
-                    self._qtree=qo.QTree(array([self[xdim],self[ydim]]))
+                    self._qtree=qo.QuadTree(array([self[xdim],self[ydim]]))
                 except:
                     from traceback import print_exc
                     print_exc()

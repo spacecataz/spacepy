@@ -5,9 +5,9 @@ A class for building QO trees for :class:`~spacepy.pybats.bats.Bats2d`
 objects.
 '''
 
-class QTree(object):
+class QuadTree(object):
     '''
-    Base class for Quad/Oct tree objects assuming cell-centered grid points
+    Base class for Quad tree objects assuming cell-centered grid points
     in a rectangular non-regular layout.
     '''
     
@@ -28,6 +28,8 @@ class QTree(object):
         minloc, xmin = grid[0,:].argmin(), grid[0,:].min()
         maxloc, xmax = grid[0,:].argmax(), grid[0,:].max()
         # Distance from min X value is grid size at that point.
+        # Need to find neighboring point to get grid size, use that value
+        # to find distance from cell center to simulation box boundary.
         r = sqrt((grid[0,:]-xmin)**2. + (grid[1,:]-grid[1,:][minloc])**2.)
         ml=(where(r>0, r, 10000)).min()
         # Actual min is not cell center, but cell boundary.
@@ -49,7 +51,6 @@ class QTree(object):
 
         # Some things all trees should know about themselves.
         self.nleafs=0
-        self.aspect_ratio = (xmax-xmin)/(ymax-ymin)
         self.dx_min = inf # Minimum and maximum spacing
         self.dx_max = -1  # over all leafs in tree.
 
@@ -144,7 +145,7 @@ class QTree(object):
         # not a constant-resolution zone.
         # Subdivide section into four new ones (8 if oct tree)
         dx = (self[i].lim[1] - self[i].lim[0])/2.0
-        x=[self[i].lim[0], self[i].lim[0]+dx, self[i].lim[0]+dx, self[i].lim[0]]
+        x=[self[i].lim[0], self[i].lim[0]+dx, self[i].lim[0], self[i].lim[0]+dx]
         y=[self[i].lim[2], self[i].lim[2], self[i].lim[2]+dx, self[i].lim[2]+dx]
         for j, k in enumerate(range(self.ld(i), self.rd(i)+1)):
             self[k] = [x[j],x[j]+dx,y[j],y[j]+dx]
@@ -173,7 +174,7 @@ class QTree(object):
         return self.tree[key]
 
     def __setitem__(self, key, value):
-        self.tree[key] = Branch(value)
+        self.tree[key] = Branch2d(value)
 
     def __contains__(self, key):
         return key in self.tree
@@ -212,11 +213,6 @@ class QTree(object):
             if self[key].isLeaf:
                 color = cMap.to_rgba(self[key].dx)
                 dx_vals[self[key].dx] = 1.0
-                #if self[key].dx in res_colors:
-                #    dx_vals[self[key].dx] = 1.0
-                #    color=#res_colors[self[key].dx]
-                #else:
-                #    color='k'
                 self[key].plot_res(ax, fc=color, label=key*tag_leafs)
 
         if do_label:
@@ -234,6 +230,197 @@ class QTree(object):
                             size='x-large',path_effects=[patheffects.withStroke(
                                 linewidth=1,foreground='k')])
 
+
+class Octree(object):
+    '''
+    Base class for our Octree objects assuming cell-centered grid points
+    in a rectangular non-regular layout.
+    '''
+
+    def __init__(self, grid):
+        '''
+        Build QO Tree for input grid.  Grid should be a NxM numpy array where
+        N is the number of dimensions and M is the number of points.
+        '''
+        from numpy import sqrt, where, arange, lexsort, inf
+        (self.d, self.npoints) = grid.shape
+
+        if(self.d != 3):
+            raise NotImplementedError("Octrees are only for 3D grids.")
+        self.tree = {}
+
+        # Find limits of cell-centered grid in x direction.
+        # Get values and locations of grid max/min
+        minloc, xmin = grid[0,:].argmin(), grid[0,:].min()
+        maxloc, xmax = grid[0,:].argmax(), grid[0,:].max()
+        
+        # Distance from min X value is grid size at that point.
+        r = sqrt((grid[0,:]-xmin)**2. + \
+                 (grid[1,:]-grid[1,:][minloc])**2. + \
+                 (grid[2,:]-grid[2,:][minloc])**2.)
+        ml=(where(r>0, r, 10000)).min()
+        
+        # Actual min is not cell center, but cell boundary.
+        xmin-=ml/2.
+        # Repeat for Xmax.
+        r = sqrt((grid[0,:]-xmax)**2. + \
+                 (grid[1,:]-grid[1,:][maxloc])**2. + \
+                 (grid[2,:]-grid[2,:][maxloc])**2.)
+        ml=(where(r>0, r, 10000)).min()
+        xmax+=ml/2.
+
+        # Repeat for Ymin/max.
+        minloc, ymin = grid[1,:].argmin(),grid[1,:].min()
+        maxloc, ymax = grid[1,:].argmax(),grid[1,:].max()
+        r = sqrt((grid[1,:]-ymin)**2. + \
+                 (grid[0,:]-grid[0,:][minloc])**2. + \
+                 (grid[2,:]-grid[2,:][minloc])**2.)
+        ml=(where(r>0, r, 10000)).min()
+        ymin-=ml/2.
+        r = sqrt((grid[1,:]-ymax)**2. + \
+                 (grid[2,:]-grid[2,:][maxloc])**2. + \
+                 (grid[0,:]-grid[0,:][maxloc])**2.)
+        ml=(where(r>0, r, 10000)).min()
+        ymax+=ml/2.
+
+        # Repeat for the Zmin/max
+        minloc, zmin = grid[2,:].argmin(),grid[2,:].min()
+        maxloc, zmax = grid[2,:].argmax(),grid[2,:].max()
+        r = sqrt((grid[2,:]-zmin)**2. + \
+                 (grid[0,:]-grid[0,:][minloc])**2. + \
+                 (grid[1,:]-grid[1,:][minloc])**2.) 
+        ml=(where(r>0, r, 10000)).min()
+        zmin-=ml/2.
+        r = sqrt((grid[2,:]-zmax)**2. + \
+                 (grid[0,:]-grid[0,:][maxloc])**2. + \
+                 (grid[1,:]-grid[1,:][maxloc])**2.) 
+        ml=(where(r>0, r, 10000)).min()
+        zmax+=ml/2.
+
+        # Some things all trees should know about themselves.
+        self.nleafs=0
+        self.dx_min = inf # Minimum and maximum spacing
+        self.dx_max = -1  # over all leafs in tree.
+
+        # Use spatial range of grid to seed root of OctTree.
+        self[1]=[xmin,xmax,ymin,ymax,zmin,zmax]
+        self.locs = lexsort( (grid[0,:], grid[1,:], grid[2,:]) )    
+        self._spawn_kids(grid)
+        self.nbranch=len(list(self.keys()))
+
+    def _spawn_kids(self, grid, i=1):
+        '''
+        Internal recursive method for populating tree.
+        '''
+        from math import log
+        from numpy import sqrt, max, min, arange, meshgrid, mod, round
+
+        # Start by limiting locations to within block limits:
+        self[i].locs=self.locs[(grid[0,:][self.locs]>self[i].lim[0]) &
+                               (grid[0,:][self.locs]<self[i].lim[1]) &
+                               (grid[1,:][self.locs]>self[i].lim[2]) &
+                               (grid[1,:][self.locs]<self[i].lim[3]) &
+                               (grid[2,:][self.locs]>self[i].lim[4]) &
+                               (grid[2,:][self.locs]<self[i].lim[5]) ]
+        self[i].npts = self[i].locs.size
+        # Bats blocks are almost always 8x8X8 IN 3D HOMIE
+        # blocks must have no less than 512 POINTS.
+        # Stop branching as soon as possible (e.g. combine blocks of like dx).
+        a = log(self[i].npts/512.0, 3) # where a is npts=3^a * 512
+        if (int(a) == a): 
+            # integer 'a' implies correct number of points to be a "leaf".
+            # Approximate dx assuming a proper block.
+            xmax=max(grid[0,:][self[i].locs])
+            xmin=min(grid[0,:][self[i].locs])
+            dx = (xmax-xmin) / (sqrt(self[i].npts)-1)
+            # Count points along x=xmax and x= xmin.  These are equal in Leafs. 
+            nxmin=len(grid[0,:][self[i].locs][grid[0,:][self[i].locs]==xmin])
+            nxmax=len(grid[0,:][self[i].locs][grid[0,:][self[i].locs]==xmax])
+            # Define leaf as area of constant dx (using approx above) 
+            # or npts=512 (min level.)
+            if (a==0) or (nxmax==nxmin==(self[i].npts)**-3):
+                # An NxN block can be considered a "leaf" or stopping point
+                # if above criteria are met.  Leafs must "know" the 
+                # indices of the x,y points located inside of them as a 
+                # grid and also know the bounding coords of the grid cells.
+                self[i].isLeaf = True
+                # Use np.round to avoid truncation with numbers within machine
+                # precision of actual integers.
+                a=int( round( (self[i].npts)**(1/3), 2 ) )
+
+                self[i].locs=self[i].locs.reshape( (a, a, a) )
+                self[i].dx = dx
+                if dx>self.dx_max: self.dx_max=dx
+                if dx<self.dx_min: self.dx_min=dx
+                self[i].cells = meshgrid(
+                    arange(self[i].lim[0], self[i].lim[1]+dx, dx),
+                    arange(self[i].lim[2], self[i].lim[3]+dx, dx),
+                    arange(self[i].lim[4], self[i].lim[5]+dx, dx))
+                self.nleafs+=1
+                return
+            elif (self[i].npts < 512):
+                raise ValueError('Block with less than 8x8x8 points')
+
+        # If above criteria are not met, this block is 
+        # not a constant-resolution zone.
+        # Subdivide section into 8 new ones.
+        dx = (self[i].lim[1] - self[i].lim[0])/2.0
+        x=[self[i].lim[0],    self[i].lim[0]+dx, self[i].lim[0],    self[i].lim[0]+dx,
+           self[i].lim[0],    self[i].lim[0]+dx, self[i].lim[0],    self[i].lim[0]+dx]
+        y=[self[i].lim[2],    self[i].lim[2],    self[i].lim[2]+dx, self[i].lim[2]+dx,
+           self[i].lim[2],    self[i].lim[2],    self[i].lim[2]+dx, self[i].lim[2]+dx]
+        z=[self[i].lim[4],    self[i].lim[4],    self[i].lim[4],    self[i].lim[4],
+           self[i].lim[4]+dx, self[i].lim[4]+dx, self[i].lim[4]+dx, self[i].lim[4]+dx]
+        for j, k in enumerate(range(self.ld(i), self.rd(i)+1)):
+            self[k] = [x[j],x[j]+dx,y[j],y[j]+dx,z[j],z[j]+dx]
+            self._spawn_kids(grid,k)
+            
+    def find_leaf(self, x, y, z, i=1):
+        '''
+        Recursively search for and return the index of the leaf that 
+        contains the input point x, y and z...
+        '''
+        
+        l=self[i].lim
+        # if point is in this block...
+        if(l[0]<=x<=l[1])and(l[2]<=y<=l[3])and(l[4]<=z<=l[5]):
+            # ...and it's a leaf, return this block.
+            if self[i].isLeaf: return i
+            # ...and it's a branch, dig deeper.
+            else:
+                for j in range(self.ld(i), self.rd(i)+1, self.rd(i)+1):
+                    answer = self.find_leaf(x,y,z, i=j)
+                    if answer: return answer
+        else:
+            return False
+
+       
+    def __getitem__(self, key):
+        return self.tree[key]
+
+    def __setitem__(self, key, value):
+        self.tree[key] = Branch(value)
+
+    def __contains__(self, key):
+        return key in self.tree
+
+    def __iter__(self):
+        return iter(self.tree)
+
+    def keys(self):
+        return list(self.tree.keys())
+
+    def mom(self, k):
+        return (k+2**self.d-2)/2**self.d
+    def leftdaughter(self, k):
+        return k*2**self.d-2**self.d+2
+    def rightdaughter(self,k):
+        return k*2**self.d+1
+        
+    # convenience:
+    rd = rightdaughter
+    ld = leftdaughter
+
 class Branch(object):
     '''
     Base class for branches/leafs along a QO tree.
@@ -245,7 +432,11 @@ class Branch(object):
         '''
         self.isLeaf = False
         self.lim = lim
-    
+
+class Branch2d(Branch):
+    '''
+    Branch subclass for QuadTree objects.
+    '''
     def plotbox(self, ax, lc='k', **kwargs):
         '''
         Plot a box encompassing the branch lim onto 
