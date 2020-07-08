@@ -24,7 +24,7 @@ import spacepy.pybats.gitm as gitm
 
 __all__ = ['TestParseFileTime', 'TestIdlFile', 'TestRim', 'TestBats2d',
            'TestMagGrid', 'TestSatOrbit', 'TestVirtSat', 'TestImfInput',
-           'TestExtraction']
+           'TestExtraction', 'TestParsers']
 
 class TestParseFileTime(unittest.TestCase):
     '''
@@ -37,11 +37,12 @@ class TestParseFileTime(unittest.TestCase):
     files = ['mag_grid_e20130924-232600.out',
              'y=0_mhd_1_e20130924-220500-054.out',
              'y=0_mhd_2_t00001430_n00031073.out',
-             'z=0_mhd_2_t00050000_n00249620.out']
+             'z=0_mhd_2_t00050000_n00249620.out',
+             'log_n000010.log', 'log_e20140410-000000.log']
     dates = [dt(2013,9,24,23,26,0), dt(2013,9,24,22, 5,0),
-             None, None]
-    times = [None, None, 870, 18000]
-    iters = [None, None, 31073, 249620]
+             None, None, None, dt(2014,4,10,0,0,0)]
+    times = [None, None, 870, 18000, None, None]
+    iters = [None, None, 31073, 249620, 10, None]
 
     def testParse(self):
         from spacepy.pybats import parse_filename_time
