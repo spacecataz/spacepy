@@ -332,16 +332,18 @@ class Octree(object):
             # Approximate dx assuming a proper block.
             xmax=max(grid[0,:][self[i].locs])
             xmin=min(grid[0,:][self[i].locs])
-            dx = (xmax-xmin) / (sqrt(self[i].npts)-1)
-            # Count points along x=xmax and x= xmin.  These are equal in Leafs. 
-            nxmin=len(grid[0,:][self[i].locs][grid[0,:][self[i].locs]==xmin])
-            nxmax=len(grid[0,:][self[i].locs][grid[0,:][self[i].locs]==xmax])
+            dx = (xmax-xmin) / (self[i].npts**(1/3)-1)
+            # Count points along x=xmax and x=xmin.  Take the square root (3d!)
+            # These are equal in Leafs.
+            xpts = grid[0,:][self[i].locs]
+            nxmin=sqrt(len(xpts[grid[0,:][self[i].locs]==xmin]))
+            nxmax=sqrt(len(xpts[grid[0,:][self[i].locs]==xmax]))
             # Define leaf as area of constant dx (using approx above) 
             # or npts=512 (min level.)
-            if (a==0) or (nxmax==nxmin==(self[i].npts)**-3):
-                # An NxN block can be considered a "leaf" or stopping point
+            if (a==0) or (nxmax==nxmin==(self[i].npts)**(1/3)):
+                # An NxNxN block can be considered a "leaf" or stopping point
                 # if above criteria are met.  Leafs must "know" the 
-                # indices of the x,y points located inside of them as a 
+                # indices of the x,y,z points located inside of them as a 
                 # grid and also know the bounding coords of the grid cells.
                 self[i].isLeaf = True
                 # Use np.round to avoid truncation with numbers within machine
@@ -357,6 +359,7 @@ class Octree(object):
                     arange(self[i].lim[2], self[i].lim[3]+dx, dx),
                     arange(self[i].lim[4], self[i].lim[5]+dx, dx))
                 self.nleafs+=1
+                #raise Exception
                 return
             elif (self[i].npts < 512):
                 raise ValueError('Block with less than 8x8x8 points')
@@ -388,7 +391,7 @@ class Octree(object):
             if self[i].isLeaf: return i
             # ...and it's a branch, dig deeper.
             else:
-                for j in range(self.ld(i), self.rd(i)+1, self.rd(i)+1):
+                for j in range(self.ld(i), self.rd(i)+1):
                     answer = self.find_leaf(x,y,z, i=j)
                     if answer: return answer
         else:
