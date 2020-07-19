@@ -2486,17 +2486,26 @@ class ShellSlice(IdlFile):
         self.phi   = d2r*self.lon
         self.theta = d2r*(90-self.lat)
 
-        
+        # Determine what fluids we have if multifluid simulation.
+        # Do this by finding all "rho"-like variable names and
+        # extracting the fluid.
+        self.fluids = []
+        for k in self.keys():
+            # Skip if not density variable
+            if not 'rho' in k: continue
+            self.fluids.append( k.replace('rho',''))
+            
     def calc_urad(self):
         '''
         Calculate radial velocity.
         '''
 
-        ur = self['ux']*np.sin(self.theta)*np.cos(self.phi) + \
-             self['uy']*np.sin(self.theta)*np.sin(self.phi) + \
-             self['uz']*np.cos(self.theta)
+        for f in self.fluids:
+            ur = self[f+'ux']*np.sin(self.theta)*np.cos(self.phi) + \
+                 self[f+'uy']*np.sin(self.theta)*np.sin(self.phi) + \
+                 self[f+'uz']*np.cos(self.theta)
 
-        self['ur'] = dmarray(ur, {'units':self['ux'].attrs['units']})
+            self[f+'ur'] = dmarray(ur, {'units':self['ux'].attrs['units']})
 
     def calc_radflux(self, var, conv=1000. * (100.0)**3):
         '''
@@ -2504,14 +2513,19 @@ class ShellSlice(IdlFile):
         grid point in the slice as self[var]*self['ur'].
         Resulting value stored as "var_rflx".
         '''
-
-        if var+'_rflx' in self: return
         
+        if var+'_rflx' in self: return
+
         # Make sure we have radial velocity.
         if 'ur' not in self: self.calc_urad()
 
+        # If this flux is fluid-specific, then use that fluid radial velocity.
+        f_now = ''
+        for f in self.fluids:
+            if f in var: f_now=f
+        
         # Calc flux:
-        self[var+'_rflx'] = self[var] * self['ur'] * conv
+        self[var+'_rflx'] = self[var] * self[f_now+'ur'] * conv
 
     def calc_radflu(self, var):
         '''
