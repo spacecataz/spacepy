@@ -2484,7 +2484,7 @@ class ShellSlice(IdlFile):
         self.lon, self.r, self.lat = np.meshgrid(
             np.array(self['lon']), np.array(self['r']), np.array(self['lat']))
         self.phi   = d2r*self.lon
-        self.theta = d2r*(90-self.lat)
+        self.theta = d2r*(90-self.lat) # Spherical theta is colatitude!
 
         # Determine what fluids we have if multifluid simulation.
         # Do this by finding all "rho"-like variable names and
