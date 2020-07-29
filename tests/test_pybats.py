@@ -587,6 +587,48 @@ class TestImfInput(unittest.TestCase):
             else:
                 self.assertEqual(self.mult[v].size, npts)
         
+class TestQuadTree(unittest.TestCase):
+    '''
+    Test Quad and Oct trees.
+    '''
+    pth = os.path.dirname(os.path.abspath(__file__))
+    mhd = pbs.Bats2d(os.path.join(pth, 'data', 'pybats_test',
+                                  'y0_ascii.out'), format='ascii')
+    tree = pb.qotree.QTree( np.array([mhd['x'], mhd['z']]) )
+
+    # Known block numbers from example case:
+    knownKeys = [1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15, 16,
+                 17, 46, 47, 48, 49, 58, 59, 60, 61]
+    knownDxRange = [2.0, 8.0]
+    knownNbranch = 21
+
+    # Known values associated with finding a particular leaf:
+    knownLeaf = 59
+    knownLim  = [0.0, 32.0, 0.0, 32.0]
+    knownPts  = 256
+    knownDx   = 2.0
+    
+    def testTreeValues(self):
+        '''Test the basic values within a quad tree'''
+
+        keys = self.tree.keys()
+        keys.sort()
+
+        self.assertEqual(self.knownKeys, keys)
+        self.assertEqual(self.knownDxRange, [self.tree.dx_min, self.tree.dx_max])
+        self.assertEqual(self.knownNbranch, self.tree.nbranch)
+
+    def testFindLeaf(self):
+        '''Test finding leafs, associated values.'''
+
+        i_leaf = self.tree.find_leaf(5,5)
+        leaf = self.tree[i_leaf]
+
+        self.assertEqual(self.knownLeaf, i_leaf)
+        self.assertEqual(self.knownLim, leaf.lim)
+        self.assertEqual(self.knownPts, leaf.npts)
+        self.assertEqual(self.knownDx, leaf.dx)
+        
 class TestExtraction(unittest.TestCase):
     '''
     Test Extraction class by opening a file with known solution.
