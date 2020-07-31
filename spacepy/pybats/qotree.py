@@ -231,9 +231,9 @@ class QuadTree(object):
                                 linewidth=1,foreground='k')])
 
 
-class Octree(object):
+class OctTree(object):
     '''
-    Base class for our Octree objects assuming cell-centered grid points
+    Base class for our OctTree objects assuming cell-centered grid points
     in a rectangular non-regular layout.
     '''
 
@@ -246,7 +246,7 @@ class Octree(object):
         (self.d, self.npoints) = grid.shape
 
         if(self.d != 3):
-            raise NotImplementedError("Octrees are only for 3D grids.")
+            raise NotImplementedError("OctTrees are only for 3D grids.")
         self.tree = {}
 
         # Find limits of cell-centered grid in x direction.

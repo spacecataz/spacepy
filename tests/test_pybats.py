@@ -320,6 +320,45 @@ class TestBats2d(unittest.TestCase):
 
         # Test adding streams via "add_stream_scatter":
         self.mhd.add_stream_scatter('ux','uz',target=ax,narrow=1)
+
+class TestBats3d(unittest.TestCase):
+    '''
+    Test the class :class:`spacepy.pybats.bats.Bats3d` to ensure correct opening,
+    handling, and calculations execute correctly.
+    '''
+    pth = os.path.dirname(os.path.abspath(__file__))
+    mhd = pbs.Bats3d(os.path.join(pth, 'data', 'pybats_test', '3d_binary.out'))
+
+    knownVars = ['grid', 'x', 'y', 'z', 'rho', 'ux', 'uy', 'uz', 'bx',
+                 'by', 'bz', 'p', 'jx', 'jy', 'jz']
+    knownVars.sort()
+
+    knownAttrs = {'endian': 'little', 'format': 'binary','iter': 171,'ndim': 3,
+                  'nparam': 10, 'nvar': 11, 'nx': 8.0, 'ny': 8.0, 'nz': 8.0, 'r': 2.5,
+                  'rbody': 2.5, 'runtime': 60.0}
+
+    knownXlim = [-47, 15]
+    knownYZlim= [-31, 31]
+    knownPlim = [0.009664899669587612, 20.53201675415039]
+    
+    def testRead(self):
+        # Test variable names:
+        mhdvars = list(self.mhd.keys())
+        mhdvars.sort()
+        self.assertEqual(self.knownVars, mhdvars)
+
+        # Test important attributes:
+        for key in self.knownAttrs:
+            self.assertEqual(self.knownAttrs[key], self.mhd.attrs[key])
+
+        # Test range of XYZ points:
+        self.assertEqual(self.knownXlim,  [self.mhd['x'].min(), self.mhd['x'].max()])
+        self.assertEqual(self.knownYZlim, [self.mhd['y'].min(), self.mhd['y'].max()])
+        self.assertEqual(self.knownYZlim, [self.mhd['z'].min(), self.mhd['z'].max()])
+
+        # Test range of pressure values:
+        self.assertAlmostEqual(self.knownPlim[0], self.mhd['p'].min())
+        self.assertAlmostEqual(self.knownPlim[-1], self.mhd['p'].max())
         
 class TestMagGrid(unittest.TestCase):
     '''
