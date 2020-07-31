@@ -1,0 +1,81 @@
+#HEADFILE
+GM/IO2/3d__mhd_2_e20140410-000300-000.h                                         
+       1                nProc
+       T                IsBinary
+       8                nByteReal
+
+#NDIM
+       3                nDim
+
+#GRIDBLOCKSIZE
+       8                BlockSize1
+       8                BlockSize2
+       8                BlockSize3
+
+#ROOTBLOCK
+       1                nRootBlock1
+       1                nRootBlock2
+       1                nRootBlock3
+
+#GRIDGEOMETRYLIMIT
+cartesian               TypeGeometry
+ -4.80000E+01           XyzMin1
+  1.60000E+01           XyzMax1
+ -3.20000E+01           XyzMin2
+  3.20000E+01           XyzMax2
+ -3.20000E+01           XyzMin3
+  3.20000E+01           XyzMax3
+
+#PERIODIC
+       F                IsPeriodic1
+       F                IsPeriodic2
+       F                IsPeriodic3
+
+#NSTEP
+     171                nStep
+
+#TIMESIMULATION
+  6.0000000000E+01      TimeSimulation
+
+#NCELL
+     32768              nCellPlot
+
+#CELLSIZE
+  2.0000000000E+00      CellSizeMin1
+  2.0000000000E+00      CellSizeMin2
+  2.0000000000E+00      CellSizeMin3
+
+#PLOTRANGE
+ -4.8000000000E+01      CoordMin1
+  1.6000000000E+01      CoordMax1
+ -3.2000000000E+01      CoordMin2
+  3.2000000000E+01      CoordMax2
+ -3.2000000000E+01      CoordMin3
+  3.2000000000E+01      CoordMax3
+
+#PLOTRESOLUTION
+ -1.0000000000E+00      DxSavePlot1
+ -1.0000000000E+00      DxSavePlot2
+ -1.0000000000E+00      DxSavePlot3
+
+#SCALARPARAM
+      10                nParam
+  1.66667E+00           g         
+  2.99790E+05           c         
+ -7.81060E-02           th        
+  1.00000E+00           p1        
+  1.00000E+00           p2        
+  1.00000E+00           p3        
+  8.00000E+00           nx        
+  8.00000E+00           ny        
+  8.00000E+00           nz        
+  2.50000E+00           r         
+
+#PLOTVARIABLE
+      11                nPlotVar
+Rho Ux Uy Uz Bx By Bz P jx jy jz g c th p1 p2 p3 NX NY NZ R
+R R R Mp/cc km/s km/s km/s nT nT nT nPa uA/m2 uA/m2 uA/m2
+
+#OUTPUTFORMAT
+real4     
+
