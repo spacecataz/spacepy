@@ -85,6 +85,29 @@ functions = {
              numpy.ctypeslib.ndpointer(
                  dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # y of stream
              ],
+    'cRk4_3d': [ctypes.c_int, #return value, number of points used
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, #grid size
+                ctypes.c_int, ctypes.c_double, #maxsteps, step size
+                ctypes.c_double, ctypes.c_double, ctypes.c_double, #xyz of start
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # x grid
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # y grid
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # z grid
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # x field
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # y field
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # z field
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # x of stream
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # y of stream
+                numpy.ctypeslib.ndpointer(
+                    dtype=ctypes.c_double, flags='C_CONTIGUOUS'), # z of stream
+             ],
     }
 
 
