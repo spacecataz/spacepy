@@ -298,6 +298,7 @@ class Extraction(PbData):
         X value(s) for points at which to extract data values.
     y : float or sequence
         Y value(s) for points at which to extract data values.
+    z : [optional] float or sequence
     dataset : Bats
         :class:`~spacepy.pybats.bats.Bats2d` object from which to extract values
 
@@ -390,10 +391,14 @@ class Stream(Extraction):
         X value of location to start the trace.
     ystart : float
         Y value of location to start the trace.
+    zstart : float
+        Z value of location to start the trace.
     xfield : str
         Name of variable in ``bats`` which contains X values of the field
     yfield : str
         Name of variable in ``bats`` which contains Y values of the field
+    zfield : str
+        Name of variable in ``bats`` which contains the Z values of the field
 
     Other Parameters
     ----------------
@@ -405,8 +410,10 @@ class Stream(Extraction):
     method : str
         Integration method. The default is Runge-Kutta 4 ('rk4') which gives
         a good blend of speed and accuracy. See the test functions in
-        :mod:`~spacepy.pybats.trace2d` for more info.  The other option is
+        :mod:`~spacepy.pybats.trace` for more info.  The other option is
         a simple Euler's method approach ('eul'). (Default 'rk4')
+        Note that for `~spacepy.pybats.Bats3d` objects only have RK4 integration
+        available.
     extract : bool
         (Default: False) Extract variables along stream trace and save within
         object.
@@ -436,9 +443,12 @@ class Stream(Extraction):
     .. automethod:: plot
     '''
     
-    def __init__(self, bats, xstart, ystart, xfield, yfield, style = 'mag',
+    def __init__(self, bats, xstart, ystart, zstart,
+                 xfield, yfield, zfield, style = 'mag',
                  type='streamline', method='rk4', var_list='all',
                  extract=False, maxPoints=20000, *args, **kwargs):
+
+        # Check arguments.
         
         # Key values:
         self.xstart = xstart #X and Y starting
@@ -509,9 +519,9 @@ class Stream(Extraction):
         '''
         from numpy import array, sqrt, append
         if self.method == 'euler' or self.method == 'eul':
-            from spacepy.pybats.trace2d import trace2d_eul as trc
+            from spacepy.pybats.trace import trace2d_eul as trc
         elif self.method == 'rk4':
-            from spacepy.pybats.trace2d import trace2d_rk4 as trc
+            from spacepy.pybats.trace import trace2d_rk4 as trc
         else:
             raise ValueError('Tracing method {} not recognized!'.format(
                 self.method))
@@ -618,9 +628,9 @@ class Stream(Extraction):
         '''
         from numpy import array, sqrt
         if self.method == 'euler':
-            from spacepy.pybats.trace2d import trace2d_eul as trc
+            from spacepy.pybats.trace import trace2d_eul as trc
         elif self.method == 'rk4':
-            from spacepy.pybats.trace2d import trace2d_rk4 as trc
+            from spacepy.pybats.trace import trace2d_rk4 as trc
         
         # Get name of dimensions in order.
         grid = bats['grid'].attrs['dims']
