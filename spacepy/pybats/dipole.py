@@ -28,6 +28,45 @@ def b_hat(x, y, z):
     combinations.  Three arrays of size `x.size,y.size,z.size` are returned.
     These arrays are useful for tracing field lines, plotting quiver plots,
     etc.
+
+    Note that the returned matrices are generated using Numpy's *meshgrid*
+    function using 'ij' indexing.  For quiver plotting or other 3D handling,
+    location meshes should be constructed using the same 'ij' indexing.
+
+    If X, Y, and Z are not the same size, any single-entry dimensions
+    will be pruned.
+
+    Examples
+    ========
+    # Create 2D fields in the Y=0 plane:
+    >>> import numpy as np
+    >>> from spacepy.pybats.dipole import b_hat
+
+    >>> x = np.arange(-100.0, 101.0, 5.0)
+    >>> y = 0
+    >>> z = np.arange(-100.0, 101.0, 5.0)
+
+    >>> xgrid, ygrid, zgrid = np.meshgrid(x,y,z)
+    >>> bx, by, bz = b_hat(x,y,z)
+    >>> bx.shape
+
+    (41, 41)
+
+    # Create 3D fields, plot quivers on 3D axes:
+    >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
+    >>> from spacepy.pybats.dipole import b_hat
+
+    >>> x = np.arange(-10, 11, 2.0)
+    >>> y = np.arange(  1, 11, 2.0)
+    >>> z = np.arange(-10, 11, 2.0)
+
+    >>> xgrid, ygrid, zgrid = np.meshgrid(x,y,z, indexing='ij')
+    >>> bx, by, bz = b_hat(x,y,z)
+
+    >>> ax = plt.subplot(111, projection='3d')
+    >>> ax.quiver(xgrid,ygrid,zgrid, bx,by,bz, length=4, alpha=.2)
+
     '''
 
     # Create meshgrids of inputs:
@@ -45,22 +84,8 @@ def b_hat(x, y, z):
     b_x = -denom*cos*sin*np.cos(phi)
     b_y = -denom*cos*sin*np.sin(phi)
     b_z = denom*(cos**2-1/3)
-    
-    #cos = zgrid/r
-    #sin = r_xy/r
-    #
-    #denom = np.sqrt(1.0 + 3.0*cos**2)
-    #
-    #b_r     = 2.0 * cos / denom
-    #b_theta =       sin / denom
-    #
-    #b_xy = b_r*sin + b_theta*cos
-    #phi  = np.arctan2(ygrid, xgrid)
-    #b_x = b_xy * np.cos(phi)
-    #b_y = b_xy * np.sin(phi)
-    #b_z = b_r*cos - b_theta*sin
-    
-    return(b_x, b_y, b_z)
+        
+    return(b_x.squeeze(), b_y.squeeze(), b_z.squeeze())
 
 def b_line(x, y, z, npoints=30):
     '''
@@ -100,13 +125,14 @@ def test2d():
     y = 0
     z = np.arange(-100.0, 101.0, 5.0)
 
-    xgrid, ygrid, zgrid = np.meshgrid(x,y,z, indexing='ij')
+    xgrid, ygrid, zgrid = np.meshgrid(x,y,z)#, indexing='ij')
     x_vec, y_vec, z_vec = b_hat(x,y,z)
 
     fig = plt.figure(figsize=(10,8))
     ax1 = plt.subplot(111)
 
-    ax1.quiver(x, z, x_vec[:,0,:], z_vec[:,0,:])
+    #ax1.quiver(xgrid[:,0,:], zgrid[:,0,:], x_vec[:,0,:], z_vec[:,0,:])
+    ax1.quiver(xgrid, zgrid, x_vec, z_vec)
 
     for i in range(-120, 121, 10):
         (x,y,z) = b_line(float(i), 0.0, 0.0, 100)
