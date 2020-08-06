@@ -37,6 +37,7 @@ Functions
     smartTimeTicks
     timestamp
     add_arrows
+    set_aspect3d
 """
 
 __contact__ = 'Jonathan Niehof: jniehof@lanl.gov'
@@ -58,7 +59,7 @@ import numpy
 
 __all__ = ['add_logo', 'annotate_xaxis', 'applySmartTimeTicks', 'collapse_vertical', 'filter_boxes', 
            'smartTimeTicks', 'get_biggest_clear', 'get_clear', 'get_used_boxes', 'EventClicker', 
-           'set_target', 'shared_ylabel', 'show_used', 'timestamp', 'add_arrows']
+           'set_target', 'shared_ylabel', 'show_used', 'timestamp', 'add_arrows', 'set_aspect3d']
 
 class EventClicker(object):
     """
@@ -1550,3 +1551,37 @@ def add_arrows(lines, n=3, size=12, style='->', dorestrict=False,
             # Place an arrow:
             ax.annotate('',xytext=(x[i], y[i]), xy=(x[i+1], y[i+1]), alpha=a,
                         arrowprops=dict(arrowstyle=style,color=c),size=size)
+
+def set_aspect3d(axes):
+    '''
+    The default behavior of 3D projection plots in matplotlib
+    is to skew in the Z-direction, producing objects that appear stretched
+    in the Z-direction.  Unlike regular projection axes, this cannot be
+    easily changed using the *set_aspect* function.
+
+    This function sets the aspect ratio of an axes object using a 3D 
+    projection to be equal (i.e., the image will have real-world proportions, 
+    not stretched in the z-direction).
+
+    For axes objects that are not 3D projections, it has no effect.
+    '''
+
+    # This is the ratio of screen space (in mm on a 24in 1080p monitor)
+    # the default-sized x-axis takes over the z-axis takes:
+    ratio = 70.5/52
+
+    # Get the current axis ranges:
+    xlim, ylim, zlim = axes.get_xlim(),axes.get_ylim(),axes.get_zlim()
+
+    # Get center of x, y axes:
+    xmid = xlim[0] + (xlim[1]-xlim[0])/2.0
+    ymid = ylim[0] + (ylim[1]-ylim[0])/2.0
+    
+    # Distance we should be spanning from axes center:
+    size = ratio * (zlim[1]-zlim[0])/2.0
+
+    # Set new x, y axes limits:
+    axes.set_xlim([xmid-size, xmid+size])
+    axes.set_ylim([ymid-size, ymid+size])
+
+

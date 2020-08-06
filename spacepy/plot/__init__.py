@@ -57,6 +57,7 @@ Copyright 2011-2016 Los Alamos National Security, LLC.
    style
    timestamp
    add_arrows
+   set_aspect3d
 
 Most of the functionality in the plot module is made available directly 
 through the *plot* namespace. However, the plot module does contain

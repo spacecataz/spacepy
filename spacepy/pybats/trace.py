@@ -244,10 +244,11 @@ def test_dipole():
     # Now do dipole magnetic field.
     # Start by creating a field of unit vectors...
     x = np.arange(-100.0, 101.0, 5.0)
-    y = np.arange(-100.0, 101.0, 5.0)
-    xgrid, ygrid = np.meshgrid(x,y)
+    y = 0
+    z = np.arange(-100.0, 101.0, 5.0)
+    xgrid, zgrid = np.meshgrid(x,y)
 
-    bx, by = b_hat(x,y)
+    bx, by, bz = b_hat(x,y,z)
 
     # New figure.
     fig2 = plt.figure(figsize=(14,8))
@@ -257,35 +258,35 @@ def test_dipole():
     ax4a= plt.subplot('347')
     ax4b= plt.subplot('348')
     ax5 = plt.subplot('326')
-    ax2.quiver(x,y, bx, by, units='x', pivot='middle')
-    ax3.quiver(x,y, bx, by, units='x', pivot='tip')
-    ax4a.quiver(x,y,bx, by, units='x', pivot='tip')
-    ax4b.quiver(x,y,bx, by, units='x', pivot='tip')
-    ax5.quiver(x,y, bx, by, units='x', pivot='tip')
+    ax2.quiver(x,z, bx, bz, units='x', pivot='middle')
+    ax3.quiver(x,z, bx, bz, units='x', pivot='tip')
+    ax4a.quiver(x,z,bx, bz, units='x', pivot='tip')
+    ax4b.quiver(x,z,bx, bz, units='x', pivot='tip')
+    ax5.quiver(x,z, bx, bz, units='x', pivot='tip')
 
     # Trace through this field.
     xstart = 10.0
-    ystart = 25.0
+    zstart = 25.0
     ds = 0.1
     for ystart in range(0, 31, 5):
-        (x1, y1) = trace2d_rk4(bx, by, xstart, ystart, x, y, ds=ds)
-        l1 = ax2.plot(x1,y1,'b')[0]
-        ax3.plot(x1,y1,'b'); ax4b.plot(x1,y1,'b')
-        ax5.plot(x1,y1,'b'); ax4a.plot(x1,y1,'b')
-        (x2, y2) = trace2d_eul(bx, by, xstart, ystart, x, y, ds=ds)
-        l2 = ax2.plot(x2,y2,'r')[0]
-        ax3.plot(x2,y2,'r'); ax4b.plot(x2,y2,'r')
-        ax5.plot(x2,y2,'r'); ax4a.plot(x2,y2,'r')
-        (x3, y3) = b_line(xstart, ystart, npoints=300)
-        l3 = ax2.plot(x3,y3,'k--')[0]
-        ax3.plot(x3,y3,'k--'); ax4b.plot(x3,y3,'k--')
-        ax5.plot(x3,y3,'k--'); ax4a.plot(x3,y3,'k--')
+        (x1, z1) = trace2d_rk4(bx, bz, xstart, zstart, x, z, ds=ds)
+        l1 = ax2.plot(x1,z1,'b')[0]
+        ax3.plot(x1,z1,'b'); ax4b.plot(x1,z1,'b')
+        ax5.plot(x1,z1,'b'); ax4a.plot(x1,z1,'b')
+        (x2, z2) = trace2d_eul(bx, bz, xstart, ystart, x, z, ds=ds)
+        l2 = ax2.plot(x2,z2,'r')[0]
+        ax3.plot(x2,z2,'r'); ax4b.plot(x2,z2,'r')
+        ax5.plot(x2,z2,'r'); ax4a.plot(x2,z2,'r')
+        (x3, z3) = b_line(xstart, zstart, npoints=300)
+        l3 = ax2.plot(x3,z3,'k--')[0]
+        ax3.plot(x3,z3,'k--'); ax4b.plot(x3,z3,'k--')
+        ax5.plot(x3,z3,'k--'); ax4a.plot(x3,z3,'k--')
     
     ax2.set_xlim([-2,  100])
     ax2.set_ylim([-30, 100])
     ax2.set_title("Full View")
     ax2.set_xlabel("Normalized 'X' Coordinate")
-    ax2.set_ylabel("Normalized 'Y' Coordinate")
+    ax2.set_ylabel("Normalized 'Z' Coordinate")
     ax2.legend( (l1, l2, l3),('RK4', 'Euler', 'Analytical'), 'upper left' )
 
     ax3.set_title("Zoomed Views")
@@ -318,78 +319,47 @@ def test_dipole3d():
     import numpy as np
     import matplotlib.pyplot as plt
     from spacepy.pybats.dipole import (b_hat, b_line)
-
+    from spacepy.plot import set_aspect3d
+    
     # Now do dipole magnetic field.
     # Start by creating a field of unit vectors...
-    x = np.arange(-100.0, 101.0, 5.0)
-    y = np.arange(-100.0, 101.0, 5.0)
-    xgrid, ygrid = np.meshgrid(x,y)
+    size = 25
+    x = np.arange(-size, size+1, 1.0)
+    y = np.arange(-size, size+1, 1.0)
+    z = np.arange(-size, size+1, 1.0)
 
-    bx, by = b_hat(x,y)
+    xgrid, ygrid, zgrid = np.meshgrid(x,y,z, indexing='ij')
+    
+    bx, by, bz = b_hat(x,y,z)
 
     # New figure.
-    fig2 = plt.figure(figsize=(14,8))
-    fig2.subplots_adjust(wspace=0.15, left=0.08, right=0.94)
-    ax2 = plt.subplot('121')
-    ax3 = plt.subplot('322')
-    ax4a= plt.subplot('347')
-    ax4b= plt.subplot('348')
-    ax5 = plt.subplot('326')
-    ax2.quiver(x,y, bx, by, units='x', pivot='middle')
-    ax3.quiver(x,y, bx, by, units='x', pivot='tip')
-    ax4a.quiver(x,y,bx, by, units='x', pivot='tip')
-    ax4b.quiver(x,y,bx, by, units='x', pivot='tip')
-    ax5.quiver(x,y, bx, by, units='x', pivot='tip')
+    fig = plt.figure(figsize=(8,8))
+    ax = fig.add_subplot(111,projection='3d')
 
     # Trace through this field.
-    xstart = 10.0
-    ystart = 25.0
     ds = 0.1
-    for ystart in range(0, 31, 5):
-        (x1, y1) = trace2d_rk4(bx, by, xstart, ystart, x, y, ds=ds)
-        l1 = ax2.plot(x1,y1,'b')[0]
-        ax3.plot(x1,y1,'b'); ax4b.plot(x1,y1,'b')
-        ax5.plot(x1,y1,'b'); ax4a.plot(x1,y1,'b')
-        (x2, y2) = trace2d_eul(bx, by, xstart, ystart, x, y, ds=ds)
-        l2 = ax2.plot(x2,y2,'r')[0]
-        ax3.plot(x2,y2,'r'); ax4b.plot(x2,y2,'r')
-        ax5.plot(x2,y2,'r'); ax4a.plot(x2,y2,'r')
-        (x3, y3) = b_line(xstart, ystart, npoints=300)
-        l3 = ax2.plot(x3,y3,'k--')[0]
-        ax3.plot(x3,y3,'k--'); ax4b.plot(x3,y3,'k--')
-        ax5.plot(x3,y3,'k--'); ax4a.plot(x3,y3,'k--')
+    for theta in np.arange(0, 2*np.pi, np.pi/4):
+        xnow, ynow = np.cos(theta), np.sin(theta)
+        r = 2
+        for zstart,c in zip((-.5, -1.5, -2.),'rbg'):
+            xt, yt, zt = trace3d_rk4(bx,by,bz, r*xnow,r*ynow,zstart,
+                                     x,y,z, ds=ds)
+            xa, ya, za = b_line(r*xnow,r*ynow,zstart, 300)
+            l1 = ax.plot(xt, yt, zt, '--', color=c, alpha=1)
+            l2 = ax.plot(xa, ya, za, '-', color=c, alpha=.5)
     
-    ax2.set_xlim([-2,  100])
-    ax2.set_ylim([-30, 100])
-    ax2.set_title("Full View")
-    ax2.set_xlabel("Normalized 'X' Coordinate")
-    ax2.set_ylabel("Normalized 'Y' Coordinate")
-    ax2.legend( (l1, l2, l3),('RK4', 'Euler', 'Analytical'), 'upper left' )
+    ax.set_xlabel("Normalized 'X' Coordinate")
+    ax.set_ylabel("Normalized 'Y' Coordinate")
+    ax.set_zlabel("Normalized 'Z' Coordinate")
+    #ax2.legend( (l1, l2, l3),('RK4', 'Euler', 'Analytical'), 'upper left' )
 
-    ax3.set_title("Zoomed Views")
-    ax3.set_xlim([8.5, 17.5])
-    ax3.set_ylim([3, 33])
-    goodpos = ax3.get_position()
-
-    ax4a.set_xlim([20,30])
-    ax4a.set_ylim([-12,12])
-    pos = ax4a.get_position()
-    pos.x0 = goodpos.x0
-    pos.x1 = pos.x0 + (goodpos.x1-goodpos.x0)/2.0 -0.01
-    ax4a.set_position(pos)
-
-    ax4b.set_xlim([50,60])
-    ax4b.set_ylim([-12,12])
-    pos = ax4b.get_position()
-    pos.x0 = goodpos.x0 + (goodpos.x1-goodpos.x0)/2.0 +0.01
-    ax4b.set_position(pos)
-    ax4b.set_yticklabels('', visible=False)
-
-    ax5.set_xlim([1,7])
-    ax5.set_ylim([-7,-3])
-    ax5.set_xlabel("Normalized 'X' Coordinate")
-
-    fig2.suptitle("RK4 vs Euler's Method: Dipole Field for dS=%.3f" % ds)
+    loc = (xgrid<6) & (xgrid>-6) & \
+          (zgrid<6) & (ygrid>-6) & \
+          (ygrid<6) & (zgrid>-6) 
+    ax.quiver(xgrid[loc][::4], ygrid[loc][::4], zgrid[loc][::4],
+              bx[loc][::4], by[loc][::4], bz[loc][::4],
+              length=2, normalize=True, alpha=.2)
+    set_aspect3d(ax)
     plt.show()
     
 if __name__ == '__main__':
