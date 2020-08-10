@@ -246,8 +246,7 @@ def test_dipole():
     x = np.arange(-100.0, 101.0, 5.0)
     y = 0
     z = np.arange(-100.0, 101.0, 5.0)
-    xgrid, zgrid = np.meshgrid(x,y)
-
+    xgrid, zgrid = np.meshgrid(x,z, indexing='ij')
     bx, by, bz = b_hat(x,y,z)
 
     # New figure.
@@ -258,11 +257,11 @@ def test_dipole():
     ax4a= plt.subplot('347')
     ax4b= plt.subplot('348')
     ax5 = plt.subplot('326')
-    ax2.quiver(x,z, bx, bz, units='x', pivot='middle')
-    ax3.quiver(x,z, bx, bz, units='x', pivot='tip')
-    ax4a.quiver(x,z,bx, bz, units='x', pivot='tip')
-    ax4b.quiver(x,z,bx, bz, units='x', pivot='tip')
-    ax5.quiver(x,z, bx, bz, units='x', pivot='tip')
+    ax2.quiver( xgrid, zgrid, bx, bz, units='x', pivot='middle')
+    ax3.quiver( xgrid, zgrid, bx, bz, units='x', pivot='tip')
+    ax4a.quiver(xgrid, zgrid, bx, bz, units='x', pivot='tip')
+    ax4b.quiver(xgrid, zgrid, bx, bz, units='x', pivot='tip')
+    ax5.quiver( xgrid, zgrid, bx, bz, units='x', pivot='tip')
 
     # Trace through this field.
     xstart = 10.0
@@ -277,7 +276,7 @@ def test_dipole():
         l2 = ax2.plot(x2,z2,'r')[0]
         ax3.plot(x2,z2,'r'); ax4b.plot(x2,z2,'r')
         ax5.plot(x2,z2,'r'); ax4a.plot(x2,z2,'r')
-        (x3, z3) = b_line(xstart, zstart, npoints=300)
+        x3, y3, z3 = b_line(xstart,0,zstart, npoints=300)
         l3 = ax2.plot(x3,z3,'k--')[0]
         ax3.plot(x3,z3,'k--'); ax4b.plot(x3,z3,'k--')
         ax5.plot(x3,z3,'k--'); ax4a.plot(x3,z3,'k--')
@@ -287,7 +286,7 @@ def test_dipole():
     ax2.set_title("Full View")
     ax2.set_xlabel("Normalized 'X' Coordinate")
     ax2.set_ylabel("Normalized 'Z' Coordinate")
-    ax2.legend( (l1, l2, l3),('RK4', 'Euler', 'Analytical'), 'upper left' )
+    ax2.legend( (l1, l2, l3),('RK4', 'Euler', 'Analytical'), loc='upper left' )
 
     ax3.set_title("Zoomed Views")
     ax3.set_xlim([8.5, 17.5])
