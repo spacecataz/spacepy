@@ -195,7 +195,7 @@ int cEuler(int iSize, int jSize,           /* Grid size and max steps */
       /* Interpolate unit vectors to current location */
       fx = grid_interp(x[n], y[n], ux, xloc, yloc, iSize, jSize);
       fy = grid_interp(x[n], y[n], uy, xloc, yloc, iSize, jSize);
-      
+
       /* Detect NaNs in function values */
       //if (isnan(fx) || isnan(fy) || isinf(fx) || isinf(fy))
       //break;
@@ -248,9 +248,9 @@ int cRk4(int iSize, int jSize,             /* Grid size and max steps */
     if (DoBreak(xloc, yloc, iSize, jSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>iSize-2) yloc=iSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     //xloc=MAX(0, MIN(iSize-2, xloc));
     //yloc=MAX(0, MIN(jSize-2, yloc));
     f1x = grid_interp(x[n], y[n], ux, xloc, yloc, iSize, jSize);
@@ -266,9 +266,9 @@ int cRk4(int iSize, int jSize,             /* Grid size and max steps */
     if (DoBreak(xloc, yloc, iSize, jSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>iSize-2) yloc=iSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     //xloc=MAX(0, MIN(iSize-2, xloc));
     //yloc=MAX(0, MIN(jSize-2, yloc));
     f2x = grid_interp(xpos, ypos, ux, xloc, yloc, iSize, jSize);
@@ -285,9 +285,9 @@ int cRk4(int iSize, int jSize,             /* Grid size and max steps */
     if (DoBreak(xloc, yloc, iSize, jSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>iSize-2) yloc=iSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     //xloc=MAX(0, MIN(iSize-2, xloc));
     //yloc=MAX(0, MIN(jSize-2, yloc));
     f3x = grid_interp(xpos, ypos, ux, xloc, yloc, iSize, jSize);
@@ -303,9 +303,9 @@ int cRk4(int iSize, int jSize,             /* Grid size and max steps */
     if (DoBreak(xloc, yloc, iSize, jSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>iSize-2) yloc=iSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     //xloc=MAX(0, MIN(iSize-2, xloc));
     //yloc=MAX(0, MIN(jSize-2, yloc));
     f4x = grid_interp(xpos, ypos, ux, xloc, yloc, iSize, jSize);
@@ -355,14 +355,14 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
   y[0] = (ystart-yGrid[0]) / dy;
   z[0] = (zstart-zGrid[0]) / dz;
 
-  printf("dX, dY, dZ = %.4f, %.4f, %.4f\n", dx, dy, dz);
-  printf("Grid starts (XYZ) = %.4f, %.4f, %.4f\n",xGrid[0], yGrid[0], zGrid[0]);
+  //printf("dX, dY, dZ = %.4f, %.4f, %.4f\n", dx, dy, dz);
+  //printf("Grid starts (XYZ) = %.4f, %.4f, %.4f\n",xGrid[0], yGrid[0], zGrid[0]);
   printf("Normalized starting XYZ = %.4f, %.4f, %.4f\n",x[0],y[0],z[0]);
-  
+  printf("Size of grid: %d, %d, %d\n", iSize, jSize, kSize);
   /* Create unit vectors from full vector field */
-  printf("Full starting U = %.4f, %.4f, %.4f\n",ux[0],uy[0],uz[0]);
+  //printf("Full starting U = %.4f, %.4f, %.4f\n",ux[0],uy[0],uz[0]);
   make_unit3d(iSize, jSize, kSize, ux, uy, uz);
-  printf("Normalized starting U = %.4f, %.4f, %.4f\n",ux[0],uy[0],uz[0]);
+  //printf("Normalized starting U = %.4f, %.4f, %.4f\n",ux[0],uy[0],uz[0]);
   
   /* Perform tracing using RK4 */
   for(n=0; n<maxstep-1; n++){
@@ -379,12 +379,12 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     if (DoBreak3d(xloc, yloc, zloc, iSize, jSize, kSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>jSize-2) yloc=jSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     if(zloc>kSize-2) zloc=kSize-2;
-    if(zloc<1)       zloc=1;
-
+    if(zloc<0)       zloc=0;
+    printf("XYZ Locs: %d, %d, %d\n", xloc, yloc, zloc);
     /* Interpolate unit vectors to current location */
     f1x = grid_interp3d(x[n],y[n],z[n], ux, xloc,yloc,zloc, iSize,jSize,kSize);
     f1y = grid_interp3d(x[n],y[n],z[n], uy, xloc,yloc,zloc, iSize,jSize,kSize);
@@ -392,8 +392,28 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     if ( isnan(f1x) || isnan(f1y) || isnan(f1z) ||
 	 isinf(f1x) || isinf(f1y) || isinf(f1z) )
       break;
-
-    printf("xny[n] = %.4f, %.4f, %.4f\n", x[n],y[n],z[n]);
+    printf("XYZ Locs: %d, %d, %d\n", xloc, yloc, zloc);
+    printf("Q000, Q001, Q010, Q011, Q100, Q101, Q110, Q111=\n");
+    printf("%d, %d, %d, %d,\n%d, %d, %d, %d\n", \
+	    xloc   *jSize*kSize+ yloc   *kSize+zloc  ,    \
+	    xloc   *jSize*kSize+ yloc   *kSize+zloc+1,    \
+	    xloc   *jSize*kSize+(yloc+1)*kSize+zloc  ,    \
+	    xloc   *jSize*kSize+(yloc+1)*kSize+zloc+1,    \
+	   (xloc+1)*jSize*kSize+ yloc   *kSize+zloc  ,    \
+	   (xloc+1)*jSize*kSize+ yloc   *kSize+zloc+1,    \
+	   (xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc  ,    \
+	   (xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc+1);
+    printf("Actual values = \n");
+    printf("%.4f, %.4f, %.4f, %.4f,\n%.4f, %.4f, %.4f, %.4f\n", \
+	   ux[ xloc   *jSize*kSize+ yloc   *kSize+zloc  ],    \
+	   ux[ xloc   *jSize*kSize+ yloc   *kSize+zloc+1],    \
+	   ux[ xloc   *jSize*kSize+(yloc+1)*kSize+zloc  ],    \
+	   ux[ xloc   *jSize*kSize+(yloc+1)*kSize+zloc+1],    \
+	   ux[(xloc+1)*jSize*kSize+ yloc   *kSize+zloc  ],    \
+	   ux[(xloc+1)*jSize*kSize+ yloc   *kSize+zloc+1],    \
+	   ux[(xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc  ],    \
+	   ux[(xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc+1]); 
+        
     printf("F1xyz = %.4f, %.4f, %.4f\n", f1x, f1y, f1z);
     
     /* SUBSTEP #2 */
@@ -407,11 +427,11 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     if (DoBreak3d(xloc, yloc, zloc, iSize, jSize, kSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>jSize-2) yloc=jSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     if(zloc>kSize-2) zloc=kSize-2;
-    if(zloc<1)       zloc=1;
+    if(zloc<0)       zloc=0;
 
     f2x = grid_interp3d(xpos,ypos,zpos, ux, xloc,yloc,zloc, iSize,jSize,kSize);
     f2y = grid_interp3d(xpos,ypos,zpos, uy, xloc,yloc,zloc, iSize,jSize,kSize);
@@ -431,11 +451,11 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     if (DoBreak3d(xloc, yloc, zloc, iSize, jSize, kSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>jSize-2) yloc=jSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     if(zloc>kSize-2) zloc=kSize-2;
-    if(zloc<1)       zloc=1;
+    if(zloc<0)       zloc=0;
     
     f3x = grid_interp3d(xpos,ypos,zpos, ux, xloc,yloc,zloc, iSize,jSize,kSize);
     f3y = grid_interp3d(xpos,ypos,zpos, uy, xloc,yloc,zloc, iSize,jSize,kSize);
@@ -455,11 +475,11 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     if (DoBreak3d(xloc, yloc, zloc, iSize, jSize, kSize))
       break;
     if(xloc>iSize-2) xloc=iSize-2;
-    if(xloc<1)       xloc=1;
+    if(xloc<0)       xloc=0;
     if(yloc>jSize-2) yloc=jSize-2;
-    if(yloc<1)       yloc=1;
+    if(yloc<0)       yloc=0;
     if(zloc>kSize-2) zloc=kSize-2;
-    if(zloc<1)       zloc=1;
+    if(zloc<0)       zloc=0;
 
     f4x = grid_interp3d(xpos,ypos,zpos, ux, xloc,yloc,zloc, iSize,jSize,kSize);
     f4y = grid_interp3d(xpos,ypos,zpos, uy, xloc,yloc,zloc, iSize,jSize,kSize);
