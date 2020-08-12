@@ -355,14 +355,7 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
   y[0] = (ystart-yGrid[0]) / dy;
   z[0] = (zstart-zGrid[0]) / dz;
 
-  //printf("dX, dY, dZ = %.4f, %.4f, %.4f\n", dx, dy, dz);
-  //printf("Grid starts (XYZ) = %.4f, %.4f, %.4f\n",xGrid[0], yGrid[0], zGrid[0]);
-  printf("Normalized starting XYZ = %.4f, %.4f, %.4f\n",x[0],y[0],z[0]);
-  printf("Size of grid: %d, %d, %d\n", iSize, jSize, kSize);
-  /* Create unit vectors from full vector field */
-  //printf("Full starting U = %.4f, %.4f, %.4f\n",ux[0],uy[0],uz[0]);
   make_unit3d(iSize, jSize, kSize, ux, uy, uz);
-  //printf("Normalized starting U = %.4f, %.4f, %.4f\n",ux[0],uy[0],uz[0]);
   
   /* Perform tracing using RK4 */
   for(n=0; n<maxstep-1; n++){
@@ -372,8 +365,6 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     xloc = floor(x[n]);
     yloc = floor(y[n]);
     zloc = floor(z[n]);
-
-    printf("XYZ Locs: %d, %d, %d\n", xloc, yloc, zloc);
     
     /* Break if we leave the domain */
     if (DoBreak3d(xloc, yloc, zloc, iSize, jSize, kSize))
@@ -392,29 +383,6 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     if ( isnan(f1x) || isnan(f1y) || isnan(f1z) ||
 	 isinf(f1x) || isinf(f1y) || isinf(f1z) )
       break;
-    printf("XYZ Locs: %d, %d, %d\n", xloc, yloc, zloc);
-    printf("Q000, Q001, Q010, Q011, Q100, Q101, Q110, Q111=\n");
-    printf("%d, %d, %d, %d,\n%d, %d, %d, %d\n", \
-	    xloc   *jSize*kSize+ yloc   *kSize+zloc  ,    \
-	    xloc   *jSize*kSize+ yloc   *kSize+zloc+1,    \
-	    xloc   *jSize*kSize+(yloc+1)*kSize+zloc  ,    \
-	    xloc   *jSize*kSize+(yloc+1)*kSize+zloc+1,    \
-	   (xloc+1)*jSize*kSize+ yloc   *kSize+zloc  ,    \
-	   (xloc+1)*jSize*kSize+ yloc   *kSize+zloc+1,    \
-	   (xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc  ,    \
-	   (xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc+1);
-    printf("Actual values = \n");
-    printf("%.4f, %.4f, %.4f, %.4f,\n%.4f, %.4f, %.4f, %.4f\n", \
-	   ux[ xloc   *jSize*kSize+ yloc   *kSize+zloc  ],    \
-	   ux[ xloc   *jSize*kSize+ yloc   *kSize+zloc+1],    \
-	   ux[ xloc   *jSize*kSize+(yloc+1)*kSize+zloc  ],    \
-	   ux[ xloc   *jSize*kSize+(yloc+1)*kSize+zloc+1],    \
-	   ux[(xloc+1)*jSize*kSize+ yloc   *kSize+zloc  ],    \
-	   ux[(xloc+1)*jSize*kSize+ yloc   *kSize+zloc+1],    \
-	   ux[(xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc  ],    \
-	   ux[(xloc+1)*jSize*kSize+(yloc+1)*kSize+zloc+1]); 
-        
-    printf("F1xyz = %.4f, %.4f, %.4f\n", f1x, f1y, f1z);
     
     /* SUBSTEP #2 */
     xpos = x[n]+f1x*ds/2.0;
@@ -493,9 +461,6 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
     y[n+1] = (y[n] + ds/6.0 * (f1y + f2y*2.0 + f3y*2.0 + f4y));
     z[n+1] = (z[n] + ds/6.0 * (f1z + f2z*2.0 + f3z*2.0 + f4z));
 
-    printf("Advanced to:\n\tX=%.4f\n\tY=%.4f\n\tZ=%.4f\n",
-	   x[n+1]*dx + xGrid[0], y[n+1]*dy + yGrid[0], z[n+1]*dz + zGrid[0]);
-    //if(n>3) break;
   }
 
   /* Return traced points to original coordinate system. */
