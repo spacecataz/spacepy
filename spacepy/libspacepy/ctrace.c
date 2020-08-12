@@ -345,8 +345,6 @@ int cRk4_3d(int iSize, int jSize, int kSize,    /* Grid size and max steps */
   double dx, dy, dz, xpos, ypos, zpos,
     f1x, f2x, f3x, f4x, f1y, f2y, f3y, f4y, f1z, f2z, f3z, f4z;
 
-  printf("STARTING XYZ = %.4f, %.4f, %.4f\n", xstart, ystart, zstart);
-  
   /* Get starting points in normalized/array coordinates */
   dx = xGrid[1] - xGrid[0];
   dy = yGrid[1] - yGrid[0];
