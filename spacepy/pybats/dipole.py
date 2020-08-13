@@ -30,26 +30,31 @@ def b_hat(x, y, z):
     etc.
 
     Note that the returned matrices are generated using Numpy's *meshgrid*
-    function using 'ij' indexing.  For quiver plotting or other 3D handling,
-    location meshes should be constructed using the same 'ij' indexing.
+    function using 'ij' indexing.  For 2D quiver plotting or any 3D handling,
+    location meshes should be used (not 1D vectors) and they should be 
+    constructed using the same 'ij' indexing.
 
     If X, Y, and Z are not the same size, any single-entry dimensions
     will be pruned.
 
+    Any *nan* values will be set to zero.
+
     Examples
     ========
-    # Create 2D fields in the Y=0 plane:
+    # Create 2D fields in the Y=0 plane, plot quivers:
     >>> import numpy as np
     >>> from spacepy.pybats.dipole import b_hat
+    >>> import matplotlib.pyplot as plt
 
     >>> x = np.arange(-100.0, 101.0, 5.0)
     >>> y = 0
     >>> z = np.arange(-100.0, 101.0, 5.0)
 
-    >>> xgrid, ygrid, zgrid = np.meshgrid(x,y,z)
+    >>> xgrid, zgrid = np.meshgrid(x,z, indexing='ij')
     >>> bx, by, bz = b_hat(x,y,z)
     >>> bx.shape
-
+    >>> plt.quiver(xgrid, zgrid, bx, bz)
+    >>> plt.show()
     (41, 41)
 
     # Create 3D fields, plot quivers on 3D axes:
@@ -66,6 +71,7 @@ def b_hat(x, y, z):
 
     >>> ax = plt.subplot(111, projection='3d')
     >>> ax.quiver(xgrid,ygrid,zgrid, bx,by,bz, length=4, alpha=.2)
+    >>> plt.show()
 
     '''
 
@@ -76,15 +82,25 @@ def b_hat(x, y, z):
     r = np.sqrt(xgrid**2 + ygrid**2 + zgrid**2) # radial distance
     r_xy = np.sqrt(xgrid**2 + ygrid**2)         # radial distance from Z
     phi  = np.arctan2(ygrid, xgrid)             # Azimuth
-    sin, cos = zgrid/r, r_xy/r                  # Cosine(colat)
+    cos, sin = zgrid/r, r_xy/r                  # Cosine(colat)
 
     # Normalization factor: b_hat = B/|B|:
     denom = 1/np.sqrt(1.0 + 3.0*cos**2)
 
-    b_x = -denom*cos*sin*np.cos(phi)
-    b_y = -denom*cos*sin*np.sin(phi)
-    b_z = denom*(cos**2-1/3)
-        
+    # Get in polar coords:
+    b_r = -2.0*cos*denom  # radial component
+    b_t = -sin*denom      # polar component
+
+    # Convert to cartesian:
+    b_xy = b_r*sin + b_t*cos
+    b_x = b_xy*np.cos(phi)
+    b_y = b_xy*np.sin(phi)
+    b_z = b_r*cos - b_t*sin
+    
+    # Set NaNs to zero:
+    nan_loc = (np.isnan(b_x)) | (np.isnan(b_y)) | (np.isnan(b_z))
+    for b in (b_x,b_y,b_z): b[nan_loc]=0
+    
     return(b_x.squeeze(), b_y.squeeze(), b_z.squeeze())
 
 def b_line(x, y, z, npoints=30):

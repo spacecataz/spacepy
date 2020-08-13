@@ -202,8 +202,8 @@ def test_asymtote3d():
 
     xstart, ystart, zstart = 1.0, 1.0, 10.0
     (x1, y1, z1) = trace3d_rk4(vx,vy,vz, xstart,ystart,zstart, x,y,z, ds=0.1)
-    #(x2, y2, z2) = trace3d_rk4(vx,vy,vz, xstart,ystart,zstart, x,y,z, ds=0.5)
-    #(x3, y3, z3) = trace3d_rk4(vx,vy,vz, xstart,ystart,zstart, x,y,z, ds=1.0)
+    (x2, y2, z2) = trace3d_rk4(vx,vy,vz, xstart,ystart,zstart, x,y,z, ds=0.5)
+    (x3, y3, z3) = trace3d_rk4(vx,vy,vz, xstart,ystart,zstart, x,y,z, ds=1.0)
 
     # analytical solution (1/const) = x*y*z:
     const = 1 / (xstart * ystart * zstart)
@@ -214,16 +214,8 @@ def test_asymtote3d():
     fig = plt.figure(figsize=(10,8))
     ax1 = plt.subplot(111, projection='3d')
     
-    #ax1.quiver(x, y, vx, vy)
     ax1.plot(x_anly, y_anly, z_anly, 'k', label='Analytic',linewidth=3.0)
     ax1.plot(x1, y1, z1, 'b',   label='RK4 ds=0.1', linewidth=1.5)
-    #ax1.plot(x2, y2, 'b--', label='RK4 ds=0.5', linewidth=1.5)
-    #ax1.plot(x3, y3, 'b:',  label='RK4 ds=1.0', linewidth=1.5)
-    #ax1.legend()
-    #ax1.set_title("3D Runge Kutta: Asymtotic Field")
-    #ax1.set_xlabel("Normalized 'X' Coordinate")
-    #ax1.set_ylabel("Normalized 'Y' Coordinate")
-    #ax1.set_zlabel("Normalized 'Z' Coordinate")
     ax1.set_xlim( [3, 30] )
     ax1.set_ylim( [3, 30] )
     ax1.set_zlim( [0.25, 2.5 ] )
@@ -252,11 +244,11 @@ def test_dipole():
     # New figure.
     fig2 = plt.figure(figsize=(14,8))
     fig2.subplots_adjust(wspace=0.15, left=0.08, right=0.94)
-    ax2 = plt.subplot('121')
-    ax3 = plt.subplot('322')
-    ax4a= plt.subplot('347')
-    ax4b= plt.subplot('348')
-    ax5 = plt.subplot('326')
+    ax2 = plt.subplot(121)
+    ax3 = plt.subplot(322)
+    ax4a= plt.subplot(347)
+    ax4b= plt.subplot(348)
+    ax5 = plt.subplot(326)
     ax2.quiver( xgrid, zgrid, bx, bz, units='x', pivot='middle')
     ax3.quiver( xgrid, zgrid, bx, bz, units='x', pivot='tip')
     ax4a.quiver(xgrid, zgrid, bx, bz, units='x', pivot='tip')
@@ -265,14 +257,15 @@ def test_dipole():
 
     # Trace through this field.
     xstart = 10.0
-    zstart = 25.0
-    ds = 0.1
-    for ystart in range(0, 31, 5):
-        (x1, z1) = trace2d_rk4(bx, bz, xstart, zstart, x, z, ds=ds)
+    ds = -0.1
+    for zstart in range(0, 31, 5):
+        (x1, z1) = trace2d_rk4(bx.transpose(), bz.transpose(),
+                               xstart, zstart, x, z, ds=ds)
         l1 = ax2.plot(x1,z1,'b')[0]
         ax3.plot(x1,z1,'b'); ax4b.plot(x1,z1,'b')
         ax5.plot(x1,z1,'b'); ax4a.plot(x1,z1,'b')
-        (x2, z2) = trace2d_eul(bx, bz, xstart, ystart, x, z, ds=ds)
+        (x2, z2) = trace2d_eul(bx.transpose(), bz.transpose(),
+                               xstart, zstart, x, z, ds=ds)
         l2 = ax2.plot(x2,z2,'r')[0]
         ax3.plot(x2,z2,'r'); ax4b.plot(x2,z2,'r')
         ax5.plot(x2,z2,'r'); ax4a.plot(x2,z2,'r')
@@ -350,14 +343,24 @@ def test_dipole3d():
     ax.set_xlabel("Normalized 'X' Coordinate")
     ax.set_ylabel("Normalized 'Y' Coordinate")
     ax.set_zlabel("Normalized 'Z' Coordinate")
-    #ax2.legend( (l1, l2, l3),('RK4', 'Euler', 'Analytical'), 'upper left' )
 
     loc = (xgrid<6) & (xgrid>-6) & \
           (zgrid<6) & (ygrid>-6) & \
           (ygrid<6) & (zgrid>-6) 
     ax.quiver(xgrid[loc][::4], ygrid[loc][::4], zgrid[loc][::4],
               bx[loc][::4], by[loc][::4], bz[loc][::4],
-              length=2, normalize=True, alpha=.2)
+              length=1, normalize=True, alpha=.2)
+
+    # Make data for sphere:
+    u = np.linspace(0, 2 * np.pi, 100)
+    v = np.linspace(0, np.pi, 100)
+    x = np.outer(np.cos(u), np.sin(v))
+    y = np.outer(np.sin(u), np.sin(v))
+    z = np.outer(np.ones(np.size(u)), np.cos(v))
+
+    # Plot the surface
+    ax.plot_surface(x, y, z)
+    
     set_aspect3d(ax)
     plt.show()
     
