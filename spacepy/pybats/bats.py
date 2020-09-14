@@ -443,18 +443,27 @@ class Stream(Extraction):
     .. automethod:: plot
     '''
     
-    def __init__(self, bats, xstart, ystart, zstart,
-                 xfield, yfield, zfield, style = 'mag',
+    def __init__(self, bats, *args,  style = 'mag',
                  type='streamline', method='rk4', var_list='all',
-                 extract=False, maxPoints=20000, *args, **kwargs):
+                 extract=False, maxPoints=20000, **kwargs):
 
-        # Check arguments.
-        
+        # Check arguments to determine if we're 3D or 2D.
+        # Set Z start and Z field appropriately.
+        if len(args) == 4:   # 2D extraction:
+            iOffset = 0
+            self.zstart=None
+            self.zvar  =None
+        elif len(args) == 6: # 3D extraction:
+            iOffset = 1
+            self.zstart=args[2]
+            self.zvar  =args[5]
+        else:
+            raise TypeError('Incorrect number of arguments')
         # Key values:
-        self.xstart = xstart #X and Y starting
-        self.ystart = ystart #points in the field.
-        self.xvar   = xfield #Strings that list the variables
-        self.yvar   = yfield #that will be used for tracing.
+        self.xstart = args[0] #X and Y starting
+        self.ystart = args[1] #points in the field.
+        self.xvar   = args[2+iOffset] #Strings that list the variables
+        self.yvar   = args[3+iOffset] #that will be used for tracing.
 
         # Descriptors:
         self.open   = True
@@ -471,10 +480,10 @@ class Stream(Extraction):
                                      var_list=var_list*extract)
         
         # Place parameters into attributes:
-        self.attrs['start']     = [xstart, ystart]
-        self.attrs['trace_var'] = [xfield, yfield]
+        self.attrs['start']     = [self.xstart, self.ystart, self.zstart]
+        self.attrs['trace_var'] = [self.xvar, self.yvar, self.zvar]
         self.attrs['method']    = method
-
+        
         # Set style
         self.set_style(style)
 
@@ -518,7 +527,9 @@ class Stream(Extraction):
         Trace through the vector field using the quad tree.
         '''
         from numpy import array, sqrt, append
-        if self.method == 'euler' or self.method == 'eul':
+        if bats['grid'].shape==3:
+            from spacepy.pybats.trace import trace3d_rk4 as trc
+        elif self.method == 'euler' or self.method == 'eul':
             from spacepy.pybats.trace import trace2d_eul as trc
         elif self.method == 'rk4':
             from spacepy.pybats.trace import trace2d_rk4 as trc
