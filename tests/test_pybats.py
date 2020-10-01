@@ -17,10 +17,11 @@ import unittest
 import numpy as np
 import numpy.testing
 
-import spacepy.pybats      as pb
-import spacepy.pybats.bats as pbs
-import spacepy.pybats.ram  as ram
-import spacepy.pybats.gitm as gitm
+import spacepy.pybats        as pb
+import spacepy.pybats.bats   as pbs
+import spacepy.pybats.ram    as ram
+import spacepy.pybats.gitm   as gitm
+import spacepy.pybats.qotree as qotree
 
 __all__ = ['TestParseFileTime', 'TestIdlFile', 'TestRim', 'TestBats2d',
            'TestMagGrid', 'TestSatOrbit', 'TestVirtSat', 'TestImfInput',
@@ -630,10 +631,11 @@ class TestQuadTree(unittest.TestCase):
     '''
     Test Quad and Oct trees.
     '''
+
     pth = os.path.dirname(os.path.abspath(__file__))
     mhd = pbs.Bats2d(os.path.join(pth, 'data', 'pybats_test',
                                   'y0_ascii.out'), format='ascii')
-    tree = pb.qotree.QTree( np.array([mhd['x'], mhd['z']]) )
+    tree = qotree.QuadTree( np.array([mhd['x'], mhd['z']]) )
 
     # Known block numbers from example case:
     knownKeys = [1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15, 16,
