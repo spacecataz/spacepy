@@ -784,7 +784,8 @@ class Bats2d(IdlFile):
         magnetic field: $\vec{U} \times \hat{b}$.  Result maintains units
         of velocity.
 
-        Values are calculated for each fluid.
+        Values are calculated for each fluid and stored as self['u_perp']
+        (using species prefixes as needed).
         '''
 
         from numpy import sqrt
@@ -798,7 +799,7 @@ class Bats2d(IdlFile):
             if (k[-2:]) == 'ux':
                 species.append(k[:-2])
                 
-        # Calculate Alfven speed in km/s.  Separate step to avoid
+        # Calculate perpendicular velocity.  Separate step to avoid
         # changing dictionary while looping over keys.
         for s in species:
             # Build components:
@@ -809,14 +810,41 @@ class Bats2d(IdlFile):
             # Get magnitude:
             self[s+'u_perp'] = sqrt(ux**2+uy**2+uz**2)
         
-    def calc_vpar(self):
-        pass
-    
+    def calc_upar(self):
+        '''
+        Calculate $\vec{U} \cdot \vec{B}$ and store as 'upar' in *self*.
+        Result maintains units of velocity.  Values are calculated for each
+        fluid.
+
+        Values arestored as self['u_par']; species prefixes are used for
+        multi-species/fluid files.
+        '''
+
+        # Ensure b_hat is calculated:
+        self.calc_b()
+
+        # Get all fluid species variables.  Save in new list.
+        species = []
+        for k in self:
+            if (k[-2:]) == 'ux':
+                species.append(k[:-2])
+                
+        # Calculate U dot B.  Separate step to avoid
+        # changing dictionary while looping over keys.
+        for s in species:
+            self[s+'u_par'] = \
+                self[s+'ux']*self['bx_hat']   \
+                + self[s+'uy']*self['by_hat'] \
+                + self[s+'uz']*self['bz_hat']
+        
     def calc_E(self):
         '''
         Calculates the MHD electric field, -UxB.  Works for default
         MHD units of nT and km/s; if these units are not correct, an 
         exception will be raised.  Stores E in mV/m.
+
+        Values are saved as self['Ex'], self['Ey'], self['Ez'], and 
+        self['E'].
         '''
         from copy import copy
 
@@ -864,6 +892,8 @@ class Bats2d(IdlFile):
         -B in units of nT.
         Resulting value is unitless.
         Values where b_total = zero are set to -1.0 in the final array.
+
+        Values are stored as self['beta'].
         '''
         from numpy import pi
 
@@ -881,7 +911,10 @@ class Bats2d(IdlFile):
         '''
         Calculates the JxB force assuming:
         -Units of J are uA/m2, units of B are nT.
-        Under these assumptions, the value returned is force density (nN/m^3).
+        Under these assumptions, the value calculated is force density with units
+        of nN/m^3.
+
+        Values are stored as 'jb' (magnitude) and 'jbx', 'jby', 'jbz'.
         '''
         from numpy import sqrt
         from spacepy.datamodel import dmarray
@@ -975,6 +1008,9 @@ class Bats2d(IdlFile):
         Output is saved as self['wD'], where D is the resulting dimension
         (e.g., 'wz' for the z-component of vorticity in the X-Y plane).
 
+        Vorticity is calculated for total fluid and by-species for 
+        multi-fluid output files.
+
         Parameters
         ==========
         None
@@ -1010,23 +1046,30 @@ class Bats2d(IdlFile):
             dim1, dim2 = 'x', 'y'
             dx1,  dx2  = d_dy, d_dx
 
-        
-        # Create new arrays to hold curl.
-        size = self['ux'].shape
-        self[w] = dmarray(np.zeros(size), {'units':'1/s'})
+        # Get all fluid species variables.  Save in new list.
+        species = []
+        for k in self:
+            if (k[-2:]) == 'ux':
+                species.append(k[:-2])
+                
+        # Calculate vorticity by species.
+        for s in species:
+            # Create new arrays to hold curl.
+            size = self[s+'ux'].shape
+            self[s+w] = dmarray(np.zeros(size), {'units':'1/s'})
 
-        # Navigate quad tree, calculate curl at every leaf.
-        for k in self.qtree:
-            # Plot only leafs of the tree.
-            if not self.qtree[k].isLeaf: continue
+            # Navigate quad tree, calculate curl at every leaf.
+            for k in self.qtree:
+                # Plot only leafs of the tree.
+                if not self.qtree[k].isLeaf: continue
 
-            # Get location of points and extract velocity:
-            leaf=self.qtree[k]
-            u1=self['u'+dim1][leaf.locs]
-            u2=self['u'+dim2][leaf.locs]
+                # Get location of points and extract velocity:
+                leaf=self.qtree[k]
+                u1=self[s+'u'+dim1][leaf.locs]
+                u2=self[s+'u'+dim2][leaf.locs]
 
-            # Calculate curl
-            self[w][leaf.locs] = conv * (dx1(u1, leaf.dx) - dx2(u2, leaf.dx))
+                # Calculate curl
+                self[s+w][leaf.locs] = conv * (dx1(u1, leaf.dx) - dx2(u2, leaf.dx))
         
         
     def calc_gradP(self):
