@@ -328,17 +328,17 @@ class Extraction(PbData):
                 if v in var_list: var_list.remove(v)
         elif type(var_list)==str:
             var_list = var_list.split()
-        elif type(var_list) != list:
+        elif type(var_list) == type(None):
             var_list=[]
-        else:
+        elif type(var_list) not in (tuple,list):
             raise TypeError('Kwarg var_list must be string, list, or None.')
         
         # Stash var list, dataset internally:
         self._var_list = var_list
         self._dataset  = dataset
 
-        # Extract along trace:
-        self.extract(x, y)
+        # Extract along trace only if there are variables to extract:
+        if var_list: self.extract(x, y)
         
     def extract(self, xpts, ypts):
         # Perform actual extraction:
@@ -459,6 +459,7 @@ class Stream(Extraction):
             self.zvar  =args[5]
         else:
             raise TypeError('Incorrect number of arguments')
+        
         # Key values:
         self.xstart = args[0] #X and Y starting
         self.ystart = args[1] #points in the field.
@@ -471,7 +472,10 @@ class Stream(Extraction):
         self.method = method
 
         # Do tracing if a tracing method has been set.
-        self.treetrace(bats, maxPoints=maxPoints)
+        if iOffset:
+            self.treetrace3d(bats, maxPoints=maxPoints)
+        else:
+            self.treetrace2d(bats, maxPoints=maxPoints)
 
         # Now, initialize as Extraction using self.x, self.y.
         # This handles the extraction as well as converting self.x, y into
@@ -521,15 +525,131 @@ class Stream(Extraction):
                 self.color=col.groups()[0]
             else:
                 self.color='k'
-                
-    def treetrace(self, bats, maxPoints=20000):
+
+    def treetrace3d(self, bats, maxPoints=20000):
         '''
-        Trace through the vector field using the quad tree.
+        Trace through a vector field using an OctTree.
+        '''
+        
+        from numpy import array, sqrt, append
+        from spacepy.pybats.trace import trace3d_rk4 as trc
+
+        if not bats.otree:
+            raise ValueError("No oct tree associated with this data.")
+        
+        # Convenience variable(s):
+        rbody = bats.attrs['rbody']
+        
+        # Get name of dimensions in order.
+        grid = bats['grid'].attrs['dims']
+
+        # Find starting block and set starting locations.
+        block = bats.find_block(self.xstart, self.ystart, self.zstart)
+        xfwd, yfwd, zfwd = [self.xstart], [self.ystart], [self.zstart]
+        xnow, ynow, znow = self.xstart, self.ystart, self.zstart
+
+        # Trace forwards.
+        while(block):
+            # Grab locations of points in block:
+            loc = bats.otree[block].locs
+            # Trace through this block.
+            x,y,z = trc(bats[self.xvar][loc],
+                        bats[self.yvar][loc],
+                        bats[self.zvar][loc],
+                        xnow, ynow, znow,
+                        bats[grid[0]][loc][0,0,:], 
+                        bats[grid[1]][loc][0,:,0],
+                        bats[grid[2]][loc][:,0,0],
+                        ds=0.01)
+            # Update location and block:
+            xnow, ynow, znow = x[-1], y[-1], z[-1]
+            newblock = bats.find_block(xnow,ynow,znow)
+            # If we didn't leave the block, stop tracing.
+            # Additionally, if inside rBody, stop.
+            if(block==newblock) or (xnow**2+ynow**2+znow**2)<rbody*.8 :
+                block=False
+            elif newblock:
+                block=newblock
+            else:
+                block=False
+            # Append to full trace vectors.
+            xfwd = np.append(xfwd, x[1:])
+            yfwd = np.append(yfwd, y[1:])
+            zfwd = np.append(zfwd, z[1:])
+            del(x,y,z)
+            # It's possible to get stuck swirling around across
+            # a few blocks.  If we spend a lot of time tracing,
+            # call it quits.
+            if xfwd.size>maxPoints: block=False
+
+        # Trace backwards.  Same Procedure as above.
+        block = bats.find_block(self.xstart, self.ystart, self.zstart)
+        xbwd, ybwd, zbwd = [self.xstart], [self.ystart], [self.zstart]
+        xnow, ynow, znow = self.xstart, self.ystart, self.zstart
+        while(block):
+            loc = bats.otree[block].locs
+            x, y, z = trc(bats[self.xvar][loc],
+                          bats[self.yvar][loc],
+                          bats[self.zvar][loc],
+                          xnow, ynow, znow,
+                          bats[grid[0]][loc][0,0,:], 
+                          bats[grid[1]][loc][0,:,0],
+                          bats[grid[2]][loc][:,0,0],
+                          ds=-0.01)
+            xnow, ynow, znow = x[-1], y[-1], z[-1]
+            newblock = bats.find_block(xnow,ynow,znow)
+            if(block==newblock) or (xnow**2+ynow**2+znow**2)<rbody*.8 :
+                block=False
+            elif newblock:
+                block=newblock
+            else:
+                block=False
+            # Append to full trace vectors.
+            xbwd = np.append(x[::-1], xbwd)
+            ybwd = np.append(y[::-1], ybwd)
+            zbwd = np.append(z[::-1], zbwd)
+            if xbwd.size>maxPoints: 
+                block=False
+
+        # Trim duplicate points created when backwards tracing.
+        # There's always at least 1 duplicate.
+        for i in range(1, xbwd.size):
+            if xbwd[-(i+1)]-xfwd[0] != 0: break
+        
+        # Combine foward and backward traces.
+        self.x = np.append(xbwd[:-i],xfwd)
+        self.y = np.append(ybwd[:-i],yfwd)
+        self.z = np.append(zbwd[:-i],zfwd)
+
+        # If planetary run w/ body:
+        # 1) Check if line is closed to body.
+        # 2) Trim points within body.
+        if 'rbody' in bats.attrs:
+            # Radial distance:
+            r = sqrt(self.x**2.0  + self.y**2.0 + self.z**2.0)
+            # Closed field line?  Lobe line?  Set status:
+            if (r[0] < rbody) and (r[-1] < rbody):
+                self.open   = False
+                self.status = 'closed'
+            elif (r[0] > rbody) and (r[-1] < rbody):
+                self.open   = True
+                self.status = 'north lobe'
+            elif (r[0] < rbody) and (r[-1] > rbody):
+                self.open   = True
+                self.status = 'south lobe'
+            # Trim the fat!
+            limit = rbody*.8
+            self.x, self.y, self.z = \
+                    self.x[r>limit], self.y[r>limit], self.z[r>limit]
+
+    def treetrace2d(self, bats, maxPoints=20000):
+        '''
+        Trace through a vector field using the quad tree.
         '''
         from numpy import array, sqrt, append
-        if bats['grid'].shape==3:
-            from spacepy.pybats.trace import trace3d_rk4 as trc
-        elif self.method == 'euler' or self.method == 'eul':
+
+        # Select appropriate integrator:
+        if self.method == 'euler' or self.method == 'eul':
             from spacepy.pybats.trace import trace2d_eul as trc
         elif self.method == 'rk4':
             from spacepy.pybats.trace import trace2d_rk4 as trc
