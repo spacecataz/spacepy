@@ -181,7 +181,7 @@ def test3d():
     z = np.arange(-size, size+1, 2.0)
     xgrid, ygrid, zgrid = np.meshgrid(x,y,z, indexing='ij')
     bx, by, bz = b_hat(x,y,z)
-    ax.quiver(xgrid,ygrid,zgrid, bx,by,bz, length=4, alpha=.2)
+    ax.quiver(xgrid,ygrid,zgrid, bx,by,bz, length=2, alpha=.2, pivot='middle')
     set_aspect3d(ax)
     ax.set_xlabel("X", size=20)
     ax.set_ylabel("Y", size=20)
