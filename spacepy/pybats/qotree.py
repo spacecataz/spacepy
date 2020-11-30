@@ -323,8 +323,8 @@ class OctTree(object):
                                (grid[2,:][self.locs]>self[i].lim[4]) &
                                (grid[2,:][self.locs]<self[i].lim[5]) ]
         self[i].npts = self[i].locs.size
-        # Bats blocks are almost always 8x8X8 IN 3D HOMIE
-        # blocks must have no less than 512 POINTS.
+        # Bats blocks are almost always 8x8X8 in 3D 
+        # blocks must have no less than 512 points.
         # Stop branching as soon as possible (e.g. combine blocks of like dx).
         a = log(self[i].npts/512.0, 3) # where a is npts=3^a * 512
         if (int(a) == a): 
@@ -354,10 +354,10 @@ class OctTree(object):
                 self[i].dx = dx
                 if dx>self.dx_max: self.dx_max=dx
                 if dx<self.dx_min: self.dx_min=dx
-                self[i].cells = meshgrid(
-                    arange(self[i].lim[0], self[i].lim[1]+dx, dx),
-                    arange(self[i].lim[2], self[i].lim[3]+dx, dx),
-                    arange(self[i].lim[4], self[i].lim[5]+dx, dx))
+                #self[i].cells = meshgrid(
+                #    arange(self[i].lim[0], self[i].lim[1]+dx, dx),
+                #    arange(self[i].lim[2], self[i].lim[3]+dx, dx),
+                #    arange(self[i].lim[4], self[i].lim[5]+dx, dx))
                 self.nleafs+=1
                 #raise Exception
                 return
@@ -368,6 +368,7 @@ class OctTree(object):
         # not a constant-resolution zone.
         # Subdivide section into 8 new ones.
         dx = (self[i].lim[1] - self[i].lim[0])/2.0
+        
         x=[self[i].lim[0],    self[i].lim[0]+dx, self[i].lim[0],    self[i].lim[0]+dx,
            self[i].lim[0],    self[i].lim[0]+dx, self[i].lim[0],    self[i].lim[0]+dx]
         y=[self[i].lim[2],    self[i].lim[2],    self[i].lim[2]+dx, self[i].lim[2]+dx,
