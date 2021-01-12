@@ -340,19 +340,25 @@ class TestBats2d(unittest.TestCase):
     Test functionality of Bats2d objects.
     '''
 
-    varnames = ['t', 'j', 'b', 'u', 'b_hat', 'u_perp', 'u_par', 'E', 'beta', 'jb', 'alfven']
+    calcnames = ['t', 'j', 'b', 'u', 'b_hat', 'u_perp', 'u_par',
+                 'E', 'beta', 'jb', 'alfven']
     
     def setUp(self):
         self.pth = os.path.dirname(os.path.abspath(__file__))
-        self.mhd = pbs.Bats2d(os.path.join(self.pth, 'data', 'pybats_test', 'y0_binary.out'))
+        self.mhd = pbs.Bats2d(os.path.join(
+            self.pth, 'data', 'pybats_test', 'y0_binary.out'))
     
-    def testCalc(self):
+    def testCalcSingle(self):
         # Test all calculations:
         self.mhd.calc_all()
+
+        for v in calcnames:
+            self.assertEqual(knownCalcSingle[v], self.mhd[v][0])
         
     def testMultispecies(self):
         # Open file:
-        mhd = pbs.Bats2d(os.path.join(self.pth, 'data', 'pybats_test', 'cut_multispecies.out'), format='ascii')
+        mhd = pbs.Bats2d(os.path.join(self.pth, 'data', 'pybats_test',
+                                      'cut_multispecies.out'), format='ascii')
         mspec_varnames='x Rho Ux Uy Uz Bx By Bz P OpRho OpUx OpUy OpUz OpP jx jy jz g rbody cuty cutz'.split()
         mspec_units='km Mp/cc km/s km/s km/s nT nT nT nPa Mp/cc km/s km/s km/s nPa uA/m2 uA/m2 uA/m2'.split()
         knownMultispecUnits = dict(zip(mspec_varnames,
