@@ -392,7 +392,8 @@ def add_body(ax, rad=2.5, facecolor='lightgrey', show_planet=True,
     ax.add_artist(body)
 
 
-def _read_idl_ascii(pbdat, header='units', start_loc=0, keep_case=True):
+def _read_idl_ascii(pbdat, header='units', start_loc=0,
+                    keep_case=True, gtype=None):
     '''
     Load a SWMF IDL ascii output file and load into a pre-existing PbData
     object.  This should only be called by :class:`IdlFile`.
@@ -454,14 +455,24 @@ def _read_idl_ascii(pbdat, header='units', start_loc=0, keep_case=True):
     # the grid size is always [x, 1(, 1)]
     # Here, we set the grid type attribute to either Regular,
     # Generalized, or Unstructured.  Let's set that here.
-    pbdat['grid'].attrs['gtype'] = 'Regular'
     pbdat['grid'].attrs['npoints']  = abs(pbdat['grid'].prod())
-    if pbdat.attrs['ndim'] < 0:
-        if any(pbdat['grid'][1:] > 1):
-            pbdat['grid'].attrs['gtype'] = 'Generalized'
+    if not gtype: # If grid type isn't specified by caller...
+        if pbdat.attrs['ndim'] < 0:
+            if any(pbdat['grid'][1:] > 1):
+                pbdat['grid'].attrs['gtype'] = 'Generalized'
+            else:
+                pbdat['grid'].attrs['gtype'] = 'Unstructured'
+                pbdat['grid'].attrs['npoints'] = pbdat['grid'][0]
         else:
-            pbdat['grid'].attrs['gtype'] = 'Unstructured'
-            pbdat['grid'].attrs['npoints'] = pbdat['grid'][0]
+            pbdat['grid'].attrs['gtype'] = 'Regular'
+    else: # ...or just use what was specified by caller.
+        pbdat['grid'].attrs['gtype'] = gtype
+
+    # Set points special for unstructured grids.
+    if pbdat['grid'].attrs['gtype'] == 'Unstructured':
+        pbdat['grid'].attrs['npoints'] = pbdat['grid'][0]
+
+    # Get number of dimensions:
     pbdat.attrs['ndim'] = abs(pbdat.attrs['ndim'])
 
     # Quick ref vars:
@@ -511,8 +522,10 @@ def _read_idl_ascii(pbdat, header='units', start_loc=0, keep_case=True):
     for v, u in zip(names, units[nSkip:]):
         pbdat[v] = dmarray(np.zeros(npts), {'units':u})
 
-    # Load grid points and data:
-    for i, line in enumerate(infile.readlines()):
+    # Load grid points and data.
+    # Only read one data frame worth of data.
+    lines = infile.readlines()[:pbdat['grid'].attrs['npoints']]
+    for i, line in enumerate(lines):
         parts=line.split()
         for j, p in enumerate(parts):
             pbdat[names[j]][i] = p
@@ -522,7 +535,7 @@ def _read_idl_ascii(pbdat, header='units', start_loc=0, keep_case=True):
 
     # Arrange data into multidimentional arrays if necessary.
     gridnames = names[:ndim]
-    if gtyp == 'Irregular':
+    if gtyp == 'Generalized':
         for v in names:
             if v not in pbdat: continue
             pbdat[v] = dmarray(np.reshape(pbdat[v], pbdat['grid'], order='F'),
@@ -1168,7 +1181,7 @@ class IdlFile(PbData):
     '''
 
     def __init__(self, filename, iframe=0, header='units',
-                 keep_case=True, *args, **kwargs):
+                 keep_case=True, gtype=None, *args, **kwargs):
         super(IdlFile, self).__init__(*args, **kwargs)  # Init as PbData.
 
         # Gather information about the file: format, endianess (if necessary),
@@ -1185,6 +1198,9 @@ class IdlFile(PbData):
         self.attrs['runtime_range'] = t_info[1]
         self.attrs['time_range']    = t_info[2]
 
+        # Store specified grid type:
+        self._gtype=gtype
+        
         # For binary files, store information about file:
         self._endchar, self._int, self._float = endchar, inttype, floattype
 
@@ -1327,7 +1343,7 @@ class IdlFile(PbData):
 
         if self.attrs['format'] == 'asc':
             _read_idl_ascii(self, header=self._header, start_loc=loc,
-                            keep_case=self._keep_case)
+                            keep_case=self._keep_case, gtype=self._gtype)
         elif self.attrs['format'] == 'bin':
             _read_idl_bin(self, header=self._header, start_loc=loc,
                           keep_case=self._keep_case)
