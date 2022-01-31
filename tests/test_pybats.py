@@ -68,7 +68,7 @@ class TestParseFileTime(unittest.TestCase):
 class TestCalcNdens(unittest.TestCase):
     '''Test the pybats.bats _calc_ndens function'''
     # Recognized species:
-    mass = {'hp':1.0, 'op':16.0, 'he':4.0, 
+    mass = {'hp':1.0, 'op':16.0, 'he':4.0,
             'sw':1.0, 'o':16.0, 'h':1.0, 'iono':1.0, '':1.0}
 
     case1 = {'rho':np.array([42.]), 'oprho':np.array([32.]),
@@ -80,7 +80,7 @@ class TestCalcNdens(unittest.TestCase):
         for s in ('hp', 'op', 'he'):
             self.assertEqual(self.case1[s+'N'   ][0], 2.0)
             self.assertEqual(self.case1[s+'Frac'][0], 100.0/3.0)
-    
+
 class TestParsers(unittest.TestCase):
     '''
     Test different text-parsing helper classes.
@@ -105,12 +105,12 @@ class TestParsers(unittest.TestCase):
                 ('b_x', 'nT'), ('b_y', 'nT'), ('b_z', 'nT'), ('p', 'nPa'),
                 ('j_x', '`mA/m^2'), ('j_y', '`mA/m^2'), ('j_z', '`mA/m^2')]
 
-    
+
     def testTexParse(self):
         for varname in self.knownTex:
             self.assertEqual(self.knownTex[varname].encode('unicode-escape'),
                              pb.mhdname_to_tex(varname).encode())
-            
+
     def testTecParse(self):
         self.assertEqual(self.knownTec, pb.parse_tecvars(self.tecText))
 
@@ -119,10 +119,10 @@ class TestPlotHelpers(unittest.TestCase):
     Test functions that assist in creating more complicated plots.
     '''
     ax = plt.axes()
-    
+
     def testAddPlanet(self):
         from matplotlib.patches import Circle, Wedge
-    
+
         body, arch = pb.add_planet(self.ax)
         self.assertEqual(type(body), Circle)
         self.assertEqual(type(arch), Wedge)
@@ -132,15 +132,15 @@ class TestPlotHelpers(unittest.TestCase):
         body, arch = pb.add_planet(self.ax, add_night=False)
         self.assertEqual(type(body), Circle)
         self.assertEqual(type(arch), Wedge)
-        
+
     def testAddBody(self):
         pb.add_body(self.ax)
         pb.add_body(self.ax, show_planet=False)
-        
+
     def tearDown(self):
         import matplotlib.pyplot as plt
         plt.close('all')
-        
+
 class TestProbeIdlFile(unittest.TestCase):
     '''
     Test the function :func:`spacepy.pybats._probe_idlfile` across many
@@ -225,7 +225,7 @@ class TestIdlFile(unittest.TestCase):
     knownMhdXmin = -220.0
     knownMhdZlim = 124.0
     knownMhdTime = dt.datetime(2014, 4, 10, 0, 0, 50)
-    
+
     # Known values for multi-frame *.outs files:
     # Time/iteration range covered by files:
     knownIterRng1  = [2500, 2512]
@@ -249,7 +249,7 @@ class TestIdlFile(unittest.TestCase):
 
         # Test time attribute:
         self.assertEqual(self.knownMhdTime, mhd.attrs['time'])
-        
+
         # Test units are loaded correctly:
         for v in mhd:
             if v not in self.varnames: continue
@@ -317,7 +317,7 @@ class TestIdlFile(unittest.TestCase):
 class TestLogFile(unittest.TestCase):
     import datetime as dt
     from spacepy.pybats import LogFile
-    
+
     names='iter dt rho mx my mz p bx by bz pmin pmax dst_sm dstflx_R=3.0'.split()
     vals1=[522, 1.07725E-001, 1.22266E+001, -2.61835E-014, -5.97144E-016,
            8.74433E-016, 5.98567E-001, 3.33039E+000, -1.42289E+000,
@@ -353,7 +353,7 @@ class TestLogFile(unittest.TestCase):
 
 class TestBatsLog(unittest.TestCase):
     '''Test BatsLog features that haven't already been tested in parent class'''
-    
+
     def setUp(self):
         self.pth = os.path.dirname(os.path.abspath(__file__))
 
@@ -387,7 +387,7 @@ class TestBatsLog(unittest.TestCase):
         fig, ax = log.add_dst_quicklook(dstvar='invalid')
         self.assertEqual(fig, None)
         self.assertEqual(ax,  None)
-        
+
 class TestRim(unittest.TestCase):
 
     # Solutions for calc_I:
@@ -460,7 +460,7 @@ class TestRim(unittest.TestCase):
         self.assertTrue(isinstance(out[1], plt.Axes))
         self.assertTrue(isinstance(out[2], mpl.contour.QuadContourSet))
         self.assertFalse(out[3])  # No color bar.
-        
+
 class TestBats2d(unittest.TestCase):
     '''
     Test functionality of Bats2d objects.
@@ -468,7 +468,7 @@ class TestBats2d(unittest.TestCase):
 
     calcnames = ['t', 'j', 'b', 'u', 'b_hat', 'u_perp', 'u_par',
                  'E', 'beta', 'jb', 'alfven']
-    
+
     knownMax1 = {'jx':1.4496836229227483e-05, 'jbz':7.309692051649108e-08,
                  'wy':0.0, 'u':1285.6114501953125}
     knownMax2 = {'jx': 1.680669083725661e-05, 'jbz': 8.276679608343329e-08,
@@ -483,7 +483,7 @@ class TestBats2d(unittest.TestCase):
         # Test all calculations:
         self.mhd.calc_all()
 
-        for v in calcnames:
+        for v in self.calcnames:
             self.assertEqual(knownCalcSingle[v], self.mhd[v][0])
 
     def testSwitchFrame(self):
