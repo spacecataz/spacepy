@@ -17,6 +17,7 @@ import shutil
 import tempfile
 import unittest
 
+import spacepy_testing
 from spacepy import ae9ap9
 
 __all__ = ['ae9ap9Tests', ]
@@ -29,8 +30,9 @@ class ae9ap9Tests(unittest.TestCase):
     
     def setUp(self):
         super(ae9ap9Tests, self).setUp()
-        pth = os.path.dirname(os.path.abspath(__file__))
-        self.datafiles = glob.glob(os.path.join(pth, 'data', 'Run1.AE9.CLoutput_mc_fluence_agg_pctile_??.txt'))
+        self.datafiles = glob.glob(os.path.join(
+            spacepy_testing.datadir,
+            'Run1.AE9.CLoutput_mc_fluence_agg_pctile_??.txt'))
         
     def tearDown(self):
         super(ae9ap9Tests, self).tearDown()
@@ -38,7 +40,10 @@ class ae9ap9Tests(unittest.TestCase):
     def test_setUnits_error(self):
         """Invalid units raise the correct error and message"""
         ans = ae9ap9.readFile(self.datafiles[0])
-        self.assertRaisesRegexp(ValueError, '^(Units of FeV)', ans.setUnits, 'FeV')
+        if hasattr(self, 'assertRaisesRegex'):
+            self.assertRaisesRegex(ValueError, '^(Units of FeV)', ans.setUnits, 'FeV')
+        else: #Py2k
+            self.assertRaisesRegexp(ValueError, '^(Units of FeV)', ans.setUnits, 'FeV')
 
     def test_setUnits_convert(self):
         """Conversion correctly changes flux/fluence values, energy values and units"""

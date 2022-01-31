@@ -14,8 +14,8 @@ Copyright 2010 Los Alamos National Security, LLC.
 #If you add functions here, be sure to:
 #1) add to the __all__ list
 #2) add to functions in Doc/source/toolbox.rst so it goes in the docs
-from __future__ import division
 from __future__ import absolute_import
+from __future__ import division
 
 import calendar
 import datetime
@@ -25,7 +25,12 @@ try:
 except ImportError: #python2
     import HTMLParser as html
     html.parser = html
-import itertools
+try:
+    import http.client
+except ImportError: # Python2
+    import httplib as http
+    http.client = http
+import numbers
 import os
 import os.path
 import re
@@ -34,12 +39,13 @@ try:
 except ImportError: #python2
     import urllib2 as urllib
     urllib.request = urllib
+import select
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
-import numbers
 import warnings
 import zipfile
 
@@ -74,15 +80,15 @@ except NameError:
     xrange = range
 
 __all__ = ['tOverlap', 'tOverlapHalf', 'tCommon', 'loadpickle', 'savepickle', 'assemble',
-           'human_sort', 'feq', 'dictree', 'update', 'progressbar',
+           'human_sort', 'dictree', 'update', 'progressbar',
            'windowMean', 'medAbsDev', 'binHisto', 'bootHisto',
            'logspace', 'geomspace', 'linspace', 'arraybin', 'mlt2rad',
            'rad2mlt', 'pmm', 'getNamedPath', 'query_yes_no',
-           'quaternionNormalize', 'quaternionRotateVector', 'quaternionMultiply',
-           'quaternionConjugate', 'interpol', 'normalize', 'intsolve', 'dist_to_list',
+           'interpol', 'normalize', 'intsolve', 'dist_to_list',
            'bin_center_to_edges', 'bin_edges_to_center', 'thread_job', 'thread_map',
            'eventTimer', 'isview', 'interweave', 'indsFromXrange', 'hypot',
-           'do_with_timeout', 'TimeoutError', 'timeout_check_call', 'unique_columns']
+           'do_with_timeout', 'TimeoutError', 'timeout_check_call',
+           'poisson_fit', 'unique_columns']
 
 __contact__ = 'Brian Larsen: balarsen@lanl.gov'
 
@@ -166,9 +172,15 @@ def hypot(*args):
     >>> tot = 500
     >>> for num in tb.logspace(1, tot, 10):
     >>>     print num
-    >>>     num_list.append(timeit.timeit(stmt='tb.hypot(a)', setup='from spacepy import toolbox as tb; import numpy as np; a = [3]*{0}'.format(int(num)), number=10000))
-    >>>     num_np.append(timeit.timeit(stmt='tb.hypot(a)', setup='from spacepy import toolbox as tb; import numpy as np; a = np.asarray([3]*{0})'.format(int(num)), number=10000))
-    >>>     num_scalar.append(timeit.timeit(stmt='tb.hypot(*a)', setup='from spacepy import toolbox as tb; import numpy as np; a = [3]*{0}'.format(int(num)), number=10000))
+    >>>     num_list.append(timeit.timeit(stmt='tb.hypot(a)',
+                            setup='from spacepy import toolbox as tb;
+                            import numpy as np; a = [3]*{0}'.format(int(num)), number=10000))
+    >>>     num_np.append(timeit.timeit(stmt='tb.hypot(a)',
+                          setup='from spacepy import toolbox as tb;
+                          import numpy as np; a = np.asarray([3]*{0})'.format(int(num)), number=10000))
+    >>>     num_scalar.append(timeit.timeit(stmt='tb.hypot(*a)',
+                              setup='from spacepy import toolbox as tb;
+                              import numpy as np; a = [3]*{0}'.format(int(num)), number=10000))
     >>> from pylab import *
     >>> loglog(tb.logspace(1, tot, 10),  num_list, lw=2, label='list')
     >>> loglog(tb.logspace(1, tot, 10),  num_np, lw=2, label='numpy->ctypes')
@@ -181,9 +193,12 @@ def hypot(*args):
     .. image:: ../../source/images/hypot_no_extension_speeds_3cases.png
     """
     if lib.have_libspacepy:
-        if len(args) == 1 and hasattr(args, 'ndim'): # it is an array
-                ans = lib.hypot_tb(args[0], np.product(args[0].shape))
-                return ans
+        if len(args) == 1 and isinstance(args[0], np.ndarray):  # it is an array
+            # make sure everything is C-ready
+            ans = lib.hypot_tb(
+                np.require(args[0], dtype=np.double, requirements='C'),
+                np.product(args[0].shape))
+            return ans
     ans = 0.0
     for arg in args:
         if hasattr(arg, '__iter__'):
@@ -330,13 +345,9 @@ def tCommon(ts1, ts2, mask_only=True):
 
     tn1, tn2 = date2num(ts1), date2num(ts2)
 
-    v_test = np.__version__.split('.')
-    if v_test[0] == 1 and v_test[1] <= 3:
-        el1in2 = np.setmember1d(tn1, tn2) #makes mask of present/absent
-        el2in1 = np.setmember1d(tn2, tn1)
-    else:
-        el1in2 = np.in1d(tn1, tn2, assume_unique=True) #makes mask of present/absent
-        el2in1 = np.in1d(tn2, tn1, assume_unique=True)
+    el1in2 = np.in1d(tn1, tn2, assume_unique=True)  #makes mask of present/absent
+    el1in2 = np.in1d(tn1, tn2, assume_unique=True)  #makes mask of present/absent
+    el2in1 = np.in1d(tn2, tn1, assume_unique=True)
 
     if mask_only:
         return el1in2, el2in1
@@ -442,7 +453,7 @@ def savepickle(fln, dict, compress=None):
         container with stuff
     compress : bool
         write as a gzip-compressed file
-                     (.gz will be added to L{fln}).
+                     (.gz will be added to ``fln``).
                      If not specified, defaults to uncompressed, unless the
                      compressed file exists and the uncompressed does not.
 
@@ -455,11 +466,9 @@ def savepickle(fln, dict, compress=None):
     >>> d = {'grade':[1,2,3], 'name':['Mary', 'John', 'Chris']}
     >>> savepickle('test.pbin', d)
     """
-    if compress == None:
-        if not os.path.exists(fln) and os.path.exists(fln + '.gz'):
-            compress = True
-        else:
-            compress = False
+    if compress == None: # Guess at compression
+        # Assume compressed if compressed already exists (and no uncompressed)
+        compress = not os.path.exists(fln) and os.path.exists(fln + '.gz')
     if compress:
         import gzip
         with open(fln + '.gz', 'wb') as fh:
@@ -469,7 +478,6 @@ def savepickle(fln, dict, compress=None):
     else:
         with open(fln, 'wb') as fh:
             pickle.dump(dict, fh, 2) # 2 ... fast binary
-    return
 
 
 # -----------------------------------------------
@@ -585,51 +593,12 @@ def human_sort( l ):
     """
     convert = lambda text: int(text) if text.isdigit() else text
     alphanum_key = lambda key: [ convert(c) for c in re.split(r'([0-9]+)', key) ]
-    alphanum_key = None
     try:
         l.sort( key=alphanum_key )
     except TypeError:
         l.sort()
     return l
 
-def feq(x, y, precision=0.0000005):
-    """
-    compare two floating point values if they are equal
-    after: http://www.lahey.com/float.htm
-
-    See Also
-    --------
-    numpy.allclose
-
-    Parameters
-    ----------
-    x : float
-        a number
-    y : float or array of floats
-        other numbers to compare
-    precision : float (optional)
-        Relative precision for equal (default 0.0000005)
-        Specified as a fraction of the sum of ``x`` and ``y``.
-
-    Returns
-    -------
-    out : bool
-        True (equal) or False (not equal)
-
-    Examples
-    --------
-    >>> import spacepy.toolbox as tb
-    >>> x = 1 + 1e-4
-    >>> y = 1 + 2e-4
-    >>> tb.feq(x, y)
-    False
-    >>> tb.feq(x, y, 1e-3)
-    True
-    """
-    x = np.asanyarray(x)
-    y = np.asanyarray(y)
-    boolean = abs(x-y) <= (abs(x+y)*precision)
-    return boolean
 
 def dictree(in_dict, verbose=False, spaces=None, levels=True, attrs=False, **kwargs):
     """
@@ -736,6 +705,213 @@ def dictree(in_dict, verbose=False, spaces=None, levels=True, attrs=False, **kwa
     return None
 
 
+def _crawl_yearly(base_url, pattern, datadir, name=None, cached=True,
+                  startyear=None):
+    """Crawl files in a directory-by-year structure
+
+    Parameters
+    ==========
+    base_url : str
+        Base of the data. This URL should point to a directory containing
+        yearly directories (YYYY).
+    pattern : str
+        Regular expression to match filenames. Will download files in each
+        yearly directory that match the pattern.
+    datadir : str
+        Directory to store downloaded files. A mirror will be maintained in
+        this directory. Note this is a "flat" mirror without the year
+        directories.
+    name : str (optional)
+        Name of the data set, used only in status messages.
+    cached : boolean (optional)
+        Only update files if timestamp on server is newer than
+        timestamp on local file (default). Set False to always
+        download files.
+    startyear : int (optional)
+        First year to crawl, as four-digit number or four-character string.
+        If not specified, will download all years. If specified, will delete
+        years prior to this which have already been downloaded.
+
+    Returns
+    =======
+    list
+        All the filenames that were mirrored, in order; or None if there
+        were no updates. If there are any updates, all filenames are
+        included.
+    """
+    name = '' if name is None else '{} '.format(name)
+    #Find all the files to download
+    print("Finding {}files to download ...".format(name))
+    progressbar(0, 1, 1, text='Listing files')
+    conn = None
+    if spacepy.config['keepalive']:
+        try:
+            data, conn = get_url(base_url, keepalive=True)
+        except socket.error: #Give up on keepalives
+            pass
+    if conn is None:
+        data = get_url(base_url)
+    if str is not bytes:
+        data = data.decode('utf-8')
+    p = LinkExtracter()
+    p.feed(data)
+    p.close()
+    yearlist = [y[0:4] for y in p.links if re.match(r'\d{4}/', y)
+                and (startyear is None or y[0:4] >= str(startyear))]
+    downloadme = {}
+    for i, y in enumerate(yearlist):
+        yearurl = '{}{}/'.format(base_url, y)
+        if conn is None:
+            data = get_url(yearurl)
+        else:
+            data, conn = get_url(yearurl, keepalive=True, conn=conn)
+        if str is not bytes:
+            data = data.decode('utf-8')
+        p = LinkExtracter()
+        p.feed(data)
+        p.close()
+        for f in p.links:
+            if not re.match(pattern, f):
+                continue
+            downloadme[f] = yearurl + f
+        progressbar(i + 1, 1, len(yearlist), text='Listing files')
+    print("Retrieving {}files ...".format(name))
+    filenames = sorted(list(downloadme.keys()))
+    if not os.path.exists(datadir):
+        os.makedirs(datadir)
+    newdata = False
+    #Check for existing files (delete them if no longer on server)
+    have_files = os.listdir(datadir)
+    for f in have_files:
+        if not f in filenames:
+            os.remove(os.path.join(datadir, f))
+            #File was removed, so need to reparse even if no new downloads
+            newdata = True
+    #Download
+    for i, fname in enumerate(filenames):
+        if conn is None:
+            res = get_url(downloadme[fname], os.path.join(datadir, fname),
+                          cached=cached)
+        else:
+            res, conn = get_url(downloadme[fname], os.path.join(datadir, fname),
+                                cached=cached, keepalive=True, conn=conn)
+        if res is not None:
+            newdata = True
+        progressbar(i + 1, 1, len(filenames))
+    if conn is not None:
+        conn.close()
+    return filenames if newdata else None
+
+
+def _get_qindenton_daily(qd_daily_url=None, cached=True, startyear=None):
+    """Download the Qin-Denton OMNI-like daily files
+    
+    Parameters
+    ==========
+    qd_daily_url : str (optional)
+        Base of the Qin-Denton data, in hourly JSON-headed ASCII. This URL
+        should point to the directory containing the yearly directories.
+        Default from ``qd_daily_url`` in config file.
+    cached : boolean (optional)
+        Only update files if timestamp on server is newer than
+        timestamp on local file (default). Set False to always
+        download files.
+    startyear : int (optional)
+        If specified, start downloading files from the year given,
+        rather than all years. This will delete older files!
+
+    Returns
+    =======
+    SpaceData
+        The data extracted from the Q-D dataset, fully processed for saving
+        as SpacePy HDF5 OMNI data.
+    """
+    if qd_daily_url is None:
+        qd_daily_url = spacepy.config['qd_daily_url']
+    datadir = os.path.join(spacepy.DOT_FLN, 'data', 'qindenton_daily_files')
+    _crawl_yearly(qd_daily_url, r'QinDenton_\d{8}_hour.txt',
+                  datadir, name='Q-D daily', cached=cached, startyear=startyear)
+    #Read and process
+    print("Processing Q-D daily files ...")
+    return _assemble_qindenton_daily(datadir)
+
+
+def _assemble_qindenton_daily(qd_daily_dir):
+    """Assemble Qin-Denton daily files into OMNI structure
+
+    Parameters
+    ==========
+    qd_daily_dir : str
+        Directory with Qin-Denton daily files.
+
+    Returns
+    =======
+    SpaceData
+        The data extracted from the Q-D dataset, fully processed for saving
+        as SpacePy HDF5 OMNI data.
+    """
+    import spacepy.datamodel
+    filelist = sorted(glob.glob(os.path.join(qd_daily_dir, '*_hour.txt')))
+    data = [spacepy.datamodel.readJSONheadedASCII(f)
+            for f in filelist]
+    omnidata = spacepy.datamodel.SpaceData()
+    for k in data[0].keys():
+        if k in ('DateTime', 'Minute', 'OriginFile', 'Second'):
+            continue
+        omnidata[k] = spacepy.datamodel.dmarray(
+            np.concatenate([d[k] for d in data]), dtype=np.float32)
+    del data
+    ntimes = set([len(v) for v in omnidata.values()])
+    if len(ntimes) != 1:
+        raise ValueError(
+            'Input Q-D daily file has different size for different variables')
+    ntimes = ntimes.pop()
+    # Renaming from the names in new file to old file names
+    for oldname, newname in (('dens', 'Den_P'),
+                             ('velo', 'Vsw')):
+        omnidata[oldname] = omnidata[newname]
+        del omnidata[newname]
+        if '{}_status'.format(newname) in omnidata:
+            omnidata['{}_status'.format(oldname)] \
+                = omnidata['{}_status'.format(newname)]
+            del omnidata['{}_status'.format(newname)]
+    # Quality flags
+    qbits = spacepy.datamodel.SpaceData()
+    for k in list(omnidata.keys()): # Edit while iterate
+        if not k.endswith('_status'):
+            continue
+        v = spacepy.datamodel.dmarray(omnidata[k], dtype=np.int8)
+        basename = k.split('_')[0]
+        if basename in ('G', 'W'): # Arrays
+            for i in range(omnidata[k].shape[1]):
+                qbits['{}{:d}'.format(basename, i + 1)] = v[:, i]
+        else:
+            qbits[basename] = v
+        del omnidata[k]
+    omnidata['Qbits'] = qbits
+    # Reformat some arrays to multi-variable
+    for name in ('Bz', 'G', 'W'):
+        for i in range(omnidata[name].shape[1]):
+            omnidata['{}{:d}'.format(name, i + 1)] = omnidata[name][:, i]
+        del omnidata[name]
+    # Make integers of integers
+    for k in ('Dst', 'Year', 'Month', 'Day', 'Hour'):
+        omnidata[k] = spacepy.datamodel.dmarray(omnidata[k], dtype=np.int16)
+    # Process time formats
+    omnidata['UTC'] = spacepy.datamodel.dmarray([
+        datetime.datetime(omnidata['Year'][i],
+                          omnidata['Month'][i],
+                          omnidata['Day'][i],
+                          omnidata['Hour'][i])
+        for i in range(len(omnidata['Year']))])
+    omnidata['DOY'] = spacepy.datamodel.dmarray([
+        dt.timetuple().tm_yday for dt in omnidata['UTC']], dtype=np.int16)
+    omnidata['RDT'] = spt.Ticktock(omnidata['UTC'], 'UTC').RDT
+    for k in ('Year', 'Hour', 'Month', 'Day'):
+        del omnidata[k]
+    return omnidata
+
+
 def _get_cdaweb_omni2(omni2url=None):
     """Download the OMNI2 data from SPDF
 
@@ -757,50 +933,10 @@ def _get_cdaweb_omni2(omni2url=None):
     import spacepy.pycdf.istp
     if omni2url is None:
         omni2url = spacepy.config['omni2_url']
-    #Find all the files to download
-    print("Finding OMNI2 files to download ...")
-    progressbar(0, 1, 1, text='Listing files')
-    data = get_url(omni2url)
-    if str is not bytes:
-        data = data.decode('utf-8')
-    p = LinkExtracter()
-    p.feed(data)
-    p.close()
-    yearlist = [y[0:4] for y in p.links if re.match(r'\d{4}/', y)]
-    downloadme = {}
-    for i, y in enumerate(yearlist):
-        yearurl = '{}{}/'.format(omni2url, y)
-        data = get_url(yearurl)
-        if str is not bytes:
-            data = data.decode('utf-8')
-        p = LinkExtracter()
-        p.feed(data)
-        p.close()
-        for f in p.links:
-            if not re.match(r'omni2_h0_mrg1hr_\d{8}_v\d+\.cdf', f):
-                continue
-            downloadme[f] = yearurl + f
-        progressbar(i + 1, 1, len(yearlist), text='Listing files')
-    print("Retrieving OMNI2 files ...")
-    filenames = sorted(list(downloadme.keys()))
     datadir = os.path.join(spacepy.DOT_FLN, 'data', 'omni2cdfs')
-    if not os.path.exists(datadir):
-        os.makedirs(datadir)
-    newdata = False
-    #Check for existing files (delete them if no longer on CDAWeb)
-    have_files = os.listdir(datadir)
-    for f in have_files:
-        if not f in filenames:
-            os.remove(os.path.join(datadir, f))
-            #File was removed, so need to reparse even if no new downloads
-            newdata = True
-    #Download
-    for i, fname in enumerate(filenames):
-        if get_url(downloadme[fname], os.path.join(datadir, fname),
-                   cached=True) is not None:
-            newdata = True
-        progressbar(i + 1, 1, len(filenames))
-    if not newdata:
+    filenames = _crawl_yearly(omni2url, r'omni2_h0_mrg1hr_\d{8}_v\d+\.cdf',
+                              datadir, name='OMNI2')
+    if filenames is None:
         return None
     #Read and process
     print("Reading OMNI2 files ...")
@@ -911,7 +1047,8 @@ class LinkExtracter(html.parser.HTMLParser):
             self.links.append(value)
 
 
-def get_url(url, outfile=None, reporthook=None, cached=False):
+def get_url(url, outfile=None, reporthook=None, cached=False,
+            keepalive=False, conn=None):
     """Read data from a URL
 
     Open an HTTP URL, honoring the user agent as specified in the
@@ -933,6 +1070,14 @@ def get_url(url, outfile=None, reporthook=None, cached=False):
         Compare modification time of the URL to the modification time
         of ``outfile``; do not retrieve (and return None) unless
         the URL is newer than the file.
+    keepalive : bool (optional)
+        Attempt to keep the connection open to retrieve more URLs.
+        The return becomes a tuple of (data, conn) to return the
+        connection used so it can be used again. This mode does not
+        support proxies. (Default False)
+    conn : http.client.HTTPConnection (optional)
+        An established http connection (HTTPS is also okay) to use with
+        ``keepalive``. If not provided, will attempt to make a connection.
 
     Returns
     =======
@@ -951,28 +1096,75 @@ def get_url(url, outfile=None, reporthook=None, cached=False):
     should be defined as appropriate for your environment (e.g. with
     ``HTTP_PROXY`` or ``HTTPS_PROXY`` environment variables).
     """
-    r = urllib.request.Request(url)
-    if spacepy.config.get('user_agent', ''):
-        r.add_header('User-Agent', spacepy.config['user_agent'])
-    r = urllib.request.urlopen(r)
-    if r.getcode() >= 400:
-        r.close()
-        raise RuntimeError('HTTP status {} {}'.format(r.code, r.msg))
-    headers = r.info()
+    if not keepalive and conn is not None:
+        raise ValueError('Cannot specify connection without keepalive')
+    if keepalive:
+        scheme, _, host, path = url.split('/', 3)
+        path = '/' + path # Explicitly root on the server
+        if conn is not None and conn.sock is not None:
+            readable, writeable, _ = select.select(
+                [conn.sock], [conn.sock], [], 0)
+            # Make sure no stale data to read on socket, and can write to it
+            if readable or len(writeable) != 1:
+                conn.close()
+                conn = None
+        if conn is None:
+            ctype = http.client.HTTPConnection if scheme == 'http:'\
+                    else http.client.HTTPSConnection
+            conn = ctype(host)
+        clheaders = {
+            "Connection": "keep-alive",
+        }
+        if spacepy.config.get('user_agent', ''):
+            clheaders['User-Agent'] =  spacepy.config['user_agent']
+        conn.request('HEAD' if cached else 'GET', path, headers=clheaders)
+        def checkresponse(conn):
+            """Get the response on a connection, return response and headers"""
+            r = conn.getresponse()
+            if r.status >= 400:
+                raise RuntimeError(
+                    'HTTP status {} {}'.format(r.status, r.reason))
+            headers = dict(((k.title(), v) for k, v in r.getheaders()))
+            return r, headers
+        r, headers = checkresponse(conn)
+    else:
+        r = urllib.request.Request(url)
+        if spacepy.config.get('user_agent', ''):
+            r.add_header('User-Agent', spacepy.config['user_agent'])
+        r = urllib.request.urlopen(r)
+        if r.getcode() >= 400:
+            r.close()
+            raise RuntimeError('HTTP status {} {}'.format(r.code, r.msg))
+        headers = r.info()
     modified = headers.get('Last-Modified', None)
     if modified is not None:
-        modified = datetime.datetime.strptime(modified, "%a, %d %b %Y %X GMT")
+        # strptime is affected by locale (including the month name) but the
+        # header is a constant format, so massage
+        modified = modified.split()[1:5] # Get rid of day of week and 'GMT'
+        modified[1] = str(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']\
+                          .index(modified[1]) + 1) # Make month numerical
+        modified = datetime.datetime.strptime(
+            ' '.join(modified), "%d %m %Y %H:%M:%S")
         modified = calendar.timegm(modified.timetuple())
     if cached:
         if outfile is None:
-            r.close()
+            if not keepalive:
+                r.close()
             raise RuntimeError('Must specify outfile if cached is True')
         if os.path.exists(outfile) and modified is not None:
             #Timestamp is truncated to second, so do same for local
             local_mod = int(os.path.getmtime(outfile))
             if modified <= local_mod:
-                r.close()
-                return None
+                if keepalive:
+                    r.read()
+                else:
+                    r.close()
+                return (None, conn) if keepalive else None
+        if keepalive: # Replace previous header request with full get
+            r.read()
+            conn.request('GET', path, headers=clheaders)
+            r, headers = checkresponse(conn)
     size = int(headers.get('Content-Length', 0))
     blocksize = 1024
     count = 0
@@ -985,22 +1177,25 @@ def get_url(url, outfile=None, reporthook=None, cached=False):
         count += 1
         if reporthook:
             reporthook(count, blocksize, size)
-    r.close()
+    if not keepalive:
+        r.close()
     if outfile:
         with open(outfile, 'wb') as f:
             for d in data:
                 f.write(d)
         if modified is not None: #Copy web mtime to file
             os.utime(outfile, (int(time.time()), modified))
-    return b''.join(data)
+    data = b''.join(data)
+    return (data, conn) if keepalive else data
 
 
-def update(all=True, QDomni=False, omni=False, omni2=False, leapsecs=False, PSDdata=False):
+def update(all=True, QDomni=False, omni=False, omni2=False, leapsecs=False,
+           PSDdata=False, cached=True):
     """
     Download and update local database for omni, leapsecs etc
 
     Web access is via :func:`get_url`; notes there may be helpful in
-    debugging errors.
+    debugging errors. See also the ``keepalive`` configuration option.
 
     Parameters
     ==========
@@ -1014,6 +1209,10 @@ def update(all=True, QDomni=False, omni=False, omni2=False, leapsecs=False, PSDd
         if True, update OMNI2 and Qin-Denton
     leapsecs : boolean (optional)
         if True, update only leapseconds
+    cached : boolean (optional)
+        Only update files if timestamp on server is newer than
+        timestamp on local file (default). Set False to always
+        download files.
 
     Returns
     =======
@@ -1065,15 +1264,16 @@ def update(all=True, QDomni=False, omni=False, omni2=False, leapsecs=False, PSDd
 
     if omni == True:
         # retrieve omni, unzip and save as table
-        print("Retrieving Qin_Denton file ...")
-        get_url(config['qindenton_url'], omni_fname_zip, progressbar)
+        print("Retrieving initial Qin-Denton file ...")
+        get_url(config['qindenton_url'], omni_fname_zip, progressbar,
+                cached=cached)
         fh_zip = zipfile.ZipFile(omni_fname_zip)
         data = fh_zip.read(fh_zip.namelist()[0])
         fh_zip.close()
         if not str is bytes:
             data = data.decode('ascii')
         A = np.array(data.split('\n'))
-        print("Now processing (this may take a minute) ...")
+        print("Processing initial Qin-Denton file ...")
 
         # create a keylist
         keys = A[0].split()
@@ -1141,22 +1341,36 @@ def update(all=True, QDomni=False, omni=False, omni2=False, leapsecs=False, PSDd
         omnidata['ticks'] = spt.Ticktock(omnidata['UTC'], 'UTC')
         omnidata['RDT'] = omnidata['ticks'].RDT
         del omnidata['ticks'] #Can be quickly regenerated on import
+        startyear = omnidata['Year'][-1]
         del omnidata['Year']
         del omnidata['Hr']
+
+        # Supplement with daily files
+        print('Supplementing with latest Q-D daily files,'
+              ' this will take a while...')
+        dailyomnidata = _get_qindenton_daily(cached=cached, startyear=startyear)
+        # Find where new files start
+        idx = np.searchsorted(omnidata['UTC'], dailyomnidata['UTC'][0])
+        for k in sorted(omnidata.keys()):
+            if k == 'Qbits':
+                for qk in sorted(omnidata[k].keys()):
+                    omnidata[k][qk] = spacepy.dmarray(np.concatenate((
+                        omnidata[k][qk][:idx, ...], dailyomnidata[k][qk])))
+            else:
+                omnidata[k] = spacepy.dmarray(np.concatenate((
+                    omnidata[k][:idx, ...], dailyomnidata[k])))
 
         print("Now saving... ")
         ##for now, make one file -- think about whether monthly/annual files makes sense
         toHDF5(omni_fname_h5, omnidata)
-
-        # delete left-overs
-        os.remove(omni_fname_zip)
+        print('Complete.')
 
     if omni2 == True:
         omni2_url = config['omni2_url']
         if omni2_url.endswith('.zip'):
             # adding missing values from original omni2
             print("Retrieving OMNI2 file ...")
-            get_url(omni2_url, omni2_fname_zip, progressbar)
+            get_url(omni2_url, omni2_fname_zip, progressbar, cached=cached)
             fh_zip = zipfile.ZipFile(omni2_fname_zip)
             flist = fh_zip.namelist()
             if len(flist) != 1:
@@ -1188,11 +1402,17 @@ def update(all=True, QDomni=False, omni=False, omni2=False, leapsecs=False, PSDd
 
     if leapsecs == True:
         print("Retrieving leapseconds file ... ")
-        get_url(config['leapsec_url'], leapsec_fname, progressbar)
+        get_url(config['leapsec_url'], leapsec_fname, progressbar,
+                cached=cached)
+        # Reload leap seconds if they've already been used.
+        if 'spacepy.time' in sys.modules\
+           and hasattr(sys.modules['spacepy.time'], 'TAIleaps'):
+            sys.modules['spacepy.time']._read_leaps()
 
     if PSDdata == True:
         print("Retrieving PSD sql database")
-        get_url(config['psddata_url'], PSDdata_fname, progressbar)
+        get_url(config['psddata_url'], PSDdata_fname, progressbar,
+                cached=cached)
     return datadir
 
 def indsFromXrange(inxrange):
@@ -1202,6 +1422,13 @@ def indsFromXrange(inxrange):
     ==========
     inxrange : xrange
         input xrange object to parse
+
+    Returns
+    =======
+    list of int
+       List of start, stop indices in the xrange. The return value is not
+       defined if a stride is specified or if stop is before start (but
+       will work when stop equals start).
 
     Examples
     ========
@@ -1235,9 +1462,12 @@ def progressbar(count, blocksize, totalsize, text='Download Progress'):
     >>> import urllib
     >>> urllib.urlretrieve(config['psddata_url'], PSDdata_fname, reporthook=tb.progressbar)
     """
-    percent = int(count*blocksize*100/totalsize)
-    sys.stdout.write("\r" + text + " " + "...%d%%" % percent)
-    if percent >= 100: print('\n')
+    percent = count * blocksize * 100. / totalsize
+    if percent > 100:
+        percent = 100.
+    sys.stdout.write("\r{} ...{:.0f}%".format(text, percent))
+    if percent >= 100:
+        sys.stdout.write("\n")
     sys.stdout.flush()
 
 def windowMean(data, time=[], winsize=0, overlap=0, st_time=None, op=np.mean):
@@ -1502,6 +1732,10 @@ def bootHisto(data, inter=90., n=1000, seed=None,
     All other keyword arguments are passed to :func:`numpy.histogram`
     or :func:`matplotlib.pyplot.bar`.
 
+    .. versionchanged:: 0.2.3
+       This argument pass-through did not work in earlier versions of
+       SpacePy.
+
     Parameters
     ==========
 
@@ -1539,6 +1773,8 @@ def bootHisto(data, inter=90., n=1000, seed=None,
 
     Notes
     =====
+    .. versionadded:: 0.2.1
+
     The confidence intervals are calculated for each bin individually and thus
     the resulting low/high histograms may not have actually occurred in the
     calculation from the surrogates. If using a probability density histogram,
@@ -1566,15 +1802,15 @@ def bootHisto(data, inter=90., n=1000, seed=None,
     import spacepy.poppy
     histogram_allowed_kwargs = (
         'bins', 'range', 'normed', 'weights', 'density')
-    histogram_kwargs = {k: v for k, v in kwargs
+    histogram_kwargs = {k: v for k, v in kwargs.items()
                         if k in histogram_allowed_kwargs}
-    bar_kwargs = {k: v for k, v in kwargs
+    bar_kwargs = {k: v for k, v in kwargs.items()
                   if k not in histogram_allowed_kwargs}
     sample, bin_edges = np.histogram(data, **histogram_kwargs)
     histogram_kwargs['bins'] = bin_edges
     ci_low, ci_high = spacepy.poppy.boots_ci(
         data, n, inter,
-        lambda x: np.histogram(x, **histogram_kwargs)[0],
+        lambda x: np.histogram(x, **histogram_kwargs)[0], seed=seed,
         nretvals=len(bin_edges) - 1)
     if not plot and all([x is None for x in (target, figsize, loc)]):
         return bin_edges, ci_low, ci_high, sample
@@ -1676,9 +1912,9 @@ def linspace(min, max, num, **kwargs):
     geomspace
     logspace
     """
-    if hasattr(min, 'shape') and min.shape is ():
+    if hasattr(min, 'shape') and min.shape == ():
         min = min.item()
-    if hasattr(max, 'shape') and max.shape is ():
+    if hasattr(max, 'shape') and max.shape == ():
         max = max.item()
     if isinstance(min, datetime.datetime):
         from matplotlib.dates import date2num, num2date
@@ -2068,245 +2304,6 @@ def interpol(newx, x, y, wrap=None, **kwargs):
     else:
         newy = np.interp(newx, x.compressed(), y.compressed(), **kwargs)
     return newy
-
-# -----------------------------------------------
-
-def quaternionNormalize(Qin, scalarPos='last'):
-    '''
-    Given an input quaternion (or array of quaternions), return the unit quaternion
-
-    Parameters
-    ==========
-    vec : array_like
-        input quaternion to normalize
-
-    Returns
-    =======
-    out : array_like
-        normalized quaternion
-
-    Examples
-    ========
-    >>> import spacepy.toolbox as tb
-    >>> tb.quaternionNormalize([0.707, 0, 0.707, 0.2])
-    array([ 0.69337122,  0.        ,  0.69337122,  0.19614462])
-
-    '''
-    if scalarPos.lower()=='last':
-        i, j, k = 0, 1, 2
-        w = 3
-    elif scalarPos.lower()=='first':
-        i, j, k = 1, 2, 3
-        w = 0
-    else:
-        raise NotImplementedError('quaternionNormalize: scalarPos must be set to "First" or "Last"')
-
-    Quse = np.asanyarray(Qin).astype(float)
-    try:
-        Quse.shape[1]
-    except IndexError:
-        Quse = np.asanyarray([Quse])
-    outarr = np.empty_like(Quse)
-    for idx, row in enumerate(Quse):
-        magn = hypot(row)
-        if magn>1e-12:
-            mag_inv = 1.0/magn
-            tmp = row*mag_inv
-        else:
-            tmp = [0]*4
-            tmp[i] = tmp[j] = tmp[k] = 0.0
-            tmp[w] = 1.0
-        outarr[idx, i] = tmp[i]
-        outarr[idx, j] = tmp[j]
-        outarr[idx, k] = tmp[k]
-        outarr[idx, w] = tmp[w]
-    return outarr.squeeze()
-
-
-def quaternionRotateVector(Qin, Vin, scalarPos='last', normalize=True):
-    '''
-    Given quaternions and vectors, return the vectors rotated by the quaternions
-
-    Parameters
-    ==========
-    Qin : array_like
-        input quaternion to rotate by
-    Vin : array-like
-        input vector to rotate
-
-    Returns
-    =======
-    out : array_like
-        rotated vector
-
-    Examples
-    ========
-    >>> import spacepy.toolbox as tb
-    >>> import numpy as np
-    >>> vec = [1, 0, 0]
-    >>> quat_wijk = [np.sin(np.pi/4), 0, np.sin(np.pi/4), 0.0]
-    >>> quat_ijkw = [0.0, np.sin(np.pi/4), 0, np.sin(np.pi/4)]
-    >>> tb.quaternionRotateVector(quat_ijkw, vec)
-    array([ 0.,  0., -1.])
-    >>> tb.quaternionRotateVector(quat_wijk, vec, scalarPos='first')
-    array([ 0.,  0., -1.])
-
-    See Also
-    ========
-    quaternionMultiply
-    '''
-    if scalarPos.lower()=='last':
-        i, j, k = 0, 1, 2
-        w = 3
-    elif scalarPos.lower()=='first':
-        i, j, k = 1, 2, 3
-        w = 0
-    else:
-        raise NotImplementedError('quaternionRotateVector: scalarPos must be set to "First" or "Last"')
-
-    Quse = np.asanyarray(Qin).astype(float)
-    if normalize: Quse = quaternionNormalize(Quse, scalarPos=scalarPos)
-    Vuse = np.asanyarray(Vin).astype(float)
-    try:
-        Quse.shape[1]
-    except IndexError:
-        Quse = np.asanyarray([Quse])
-    try:
-        Vuse.shape[1]
-    except IndexError:
-        Vuse = np.asanyarray([Vuse])
-    try:
-        assert Vuse.shape[0]==Quse.shape[0]
-    except AssertionError:
-        raise ValueError('quaternionRotateVector: Input vector array must have same length as input quaternion array')
-
-    outarr = np.empty((Quse.shape[0], 3))
-    for idx, row in enumerate(Quse):
-        Vrow = Vuse[idx]
-        ii, jj, kk, ww = row[i]**2, row[j]**2, row[k]**2, row[w]**2
-        iw, jw, kw = row[i]*row[w], row[j]*row[w], row[k]*row[w]
-        ij, ik, jk = row[i]*row[j], row[i]*row[k], row[j]*row[k]
-
-        outarr[idx, 0] = ww*Vrow[0] + 2*jw*Vrow[2] - 2*kw*Vrow[1] + ii*Vrow[0] + 2*ij*Vrow[1] + 2*ik*Vrow[2] - kk*Vrow[0] - jj*Vrow[0]
-        outarr[idx, 1] = 2*ij*Vrow[0] + jj*Vrow[1] + 2*jk*Vrow[2] + 2*kw*Vrow[0] - kk*Vrow[1] + ww*Vrow[1] - 2*iw*Vrow[2] - ii*Vrow[1]
-        outarr[idx, 2] = 2*ik*Vrow[0] + 2*jk*Vrow[1] + kk*Vrow[2] - 2.0*jw*Vrow[0] - jj*Vrow[2] + 2.0*iw*Vrow[1] - ii*Vrow[2] + ww*Vrow[2]
-    return outarr.squeeze()
-
-
-def quaternionMultiply(Qin1, Qin2, scalarPos='last'):
-    '''
-    Given quaternions, return the product, i.e. Qin1*Qin2
-
-    Parameters
-    ==========
-    Qin1 : array_like
-        input quaternion, first position
-    Qin2 : array-like
-        input quaternion, second position
-
-    Returns
-    =======
-    out : array_like
-        quaternion product
-
-    Examples
-    ========
-    >>> import spacepy.toolbox as tb
-    >>> import numpy as np
-    >>> vecX = [1, 0, 0] #shared X-axis
-    >>> vecZ = [0, 0, 1] #unshared, but similar, Z-axis
-    >>> quat_eci_to_gsm = [-0.05395384,  0.07589845, -0.15172533,  0.98402634]
-    >>> quat_eci_to_gse = [ 0.20016056,  0.03445775, -0.16611386,  0.96496352]
-    >>> quat_gsm_to_eci = tb.quaternionConjugate(quat_eci_to_gsm)
-    >>> quat_gse_to_gsm = tb.quaternionMultiply(quat_gsm_to_eci, quat_eci_to_gse)
-    >>> tb.quaternionRotateVector(quat_gse_to_gsm, vecX)
-    array([  1.00000000e+00,   1.06536725e-09,  -1.16892107e-08])
-    >>> tb.quaternionRotateVector(quat_gse_to_gsm, vecZ)
-    array([  1.06802834e-08,  -4.95669027e-01,   8.68511494e-01])
-    '''
-    if scalarPos.lower()=='last':
-        i, j, k = 0, 1, 2
-        w = 3
-    elif scalarPos.lower()=='first':
-        i, j, k = 1, 2, 3
-        w = 0
-    else:
-        raise NotImplementedError('quaternionMultiply: scalarPos must be set to "First" or "Last"')
-
-    Quse1 = np.asanyarray(Qin1).astype(float)
-    Quse2 = np.asanyarray(Qin2).astype(float)
-    try:
-        Quse1.shape[1]
-    except IndexError:
-        Quse1 = np.asanyarray([Quse1])
-    try:
-        Quse2.shape[1]
-    except IndexError:
-        Quse2 = np.asanyarray([Quse2])
-    try:
-        assert Quse2.shape==Quse1.shape
-    except AssertionError:
-        raise ValueError('quaternionMultiply: Input quaternion arrays must have same length')
-
-    outarr = np.empty_like(Quse1)
-    for idx, row in enumerate(Quse1):
-        row1 = row
-        row2 = Quse2[idx]
-        #vector components
-        outarr[idx, i] = row1[w]*row2[i] + row1[i]*row2[w] + row1[j]*row2[k] - row1[k]*row2[j]
-        outarr[idx, j] = row1[w]*row2[j] - row1[i]*row2[k] + row1[j]*row2[w] + row1[k]*row2[i]
-        outarr[idx, k] = row1[w]*row2[k] + row1[i]*row2[j] - row1[j]*row2[i] + row1[k]*row2[w]
-        #real part
-        outarr[idx, w] = row1[w]*row2[w] - row1[i]*row2[i] - row1[j]*row2[j] - row1[k]*row2[k]
-    return outarr.squeeze()
-
-
-def quaternionConjugate(Qin, scalarPos='last'):
-    '''
-    Given an input quaternion (or array of quaternions), return the conjugate
-
-    Parameters
-    ==========
-    vec : array_like
-        input quaternion to conjugate
-
-    Returns
-    =======
-    out : array_like
-        conjugate quaternion
-
-    Examples
-    ========
-    >>> import spacepy.toolbox as tb
-    >>> tb.quaternionConjugate([0.707, 0, 0.707, 0.2], scalarPos='last')
-    array([-0.707, -0.   , -0.707,  0.2  ])
-
-    See Also
-    ========
-    quaternionMultiply
-    '''
-    if scalarPos.lower()=='last':
-        i, j, k = 0, 1, 2
-        w = 3
-    elif scalarPos.lower()=='first':
-        i, j, k = 1, 2, 3
-        w = 0
-    else:
-        raise NotImplementedError('quaternionConjugate: scalarPos must be set to "First" or "Last"')
-
-    Quse = np.asanyarray(Qin).astype(float)
-    try:
-        Quse.shape[1]
-    except IndexError:
-        Quse = np.asanyarray([Quse])
-    outarr = np.empty_like(Quse)
-    for idx, row in enumerate(Quse):
-        outarr[idx, i] = -row[i]
-        outarr[idx, j] = -row[j]
-        outarr[idx, k] = -row[k]
-        outarr[idx, w] = row[w]
-
-    return outarr.squeeze()
 
 # -----------------------------------------------
 
@@ -2986,8 +2983,3 @@ def poisson_fit(data, initial=None, method='Powell'):
                    method=method,  # minimization method, see docs
                    )
     return ans
-
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()

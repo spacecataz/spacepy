@@ -39,6 +39,15 @@ To cite SpacePy in publications, use (BibTeX code):
     address = {Austin, TX}
     }
 
+Or to cite the code itself:
+    @software{SpacePy,
+    author       = {{Larsen}, B.~A. and {Morley}, S.~K. and {Niehof}, J.~T. and {Welling}, D.~T.},
+    title        = {SpacePy},
+    publisher    = {Zenodo},
+    doi          = {10.5281/zenodo.3252523},
+    url          = {https://doi.org/10.5281/zenodo.3252523}
+    }
+
 Certain modules may provide additional citations in the ``__citation__``
 attribute. Contact a module's author (details in the ``__citation__`` attribute) 
 before publication or public presentation of analysis performed by that 
@@ -49,38 +58,60 @@ work.
 
 .. module:: spacepy
 
+Getting Started
+===============
+
+First steps in SpacePy and scientific Python.
+
+.. toctree::
+    :maxdepth: 1
+
+    install
+    quickstart
+    help
+
 SpacePy Documents
 =================
 
+Further reference material on how to use SpacePy, and examples.
+
 .. toctree::
     :maxdepth: 1
 
-    help
-    install
-    py2k_eol
-    quickstart
-    tips
-    configuration
+    capabilities
+    release_notes
     case_studies
     publications
-    pythonic
+    py2k_eol
+    configuration
     scripts
 
-SpacePy Developer Guide
-=======================
+Developer Guide
+===============
+
+For those developing SpacePy, plus tips for all Python developers.
 
 .. toctree::
     :maxdepth: 1
 
+    pythonic
+    tips
     dep_versions
     doc_standard
+    tests
+    ci
 
-SpacePy Code
-============
+.. _module_reference:
+
+SpacePy Module Reference
+========================
+
+Description of all functions within SpacePy, by module.
 
 .. toctree::
     :maxdepth: 1
 
+    spacepy
     ae9ap9
     coordinates
     datamanager

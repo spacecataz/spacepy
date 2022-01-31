@@ -12,10 +12,12 @@ Copyright 2010 Los Alamos National Security, LLC.
 """
 from __future__ import division
 import datetime
+import warnings
+
 from functools import partial
 import numpy as np
-
 import scipy.integrate as integ
+
 from spacepy import help
 import spacepy.datamodel as dm
 import spacepy.toolbox as tb
@@ -62,7 +64,7 @@ def getLmax(ticks, model='JKemp', dbase='QDhourly'):
     omni = om.get_omni(ticks, dbase=dbase)
     Dst = omni['Dst']
     Lmax = np.zeros(len(Dst))
-    if model is 'JKemp':
+    if model == 'JKemp':
         for i, iDst in enumerate(Dst):
             Lmax[i] = 6.07e-5*iDst*iDst + 0.0436*iDst + 9.37
     else:
@@ -73,12 +75,12 @@ def getPlasmaPause(ticks, model='M2002', LT='all', omnivals=None):
     """
     Plasmapause location model(s)
 
-    CA1992 -- Carpenter, D. L., and R. R. Anderson, An ISEE/whistler 
-    model of equatorial electron density in the magnetosphere, 
+    CA1992 -- Carpenter, D. L., and R. R. Anderson, An ISEE/whistler
+    model of equatorial electron density in the magnetosphere,
     J. Geophys. Res., 97, 1097, 1992.
-    M2002 -- Moldwin, M. B., L. Downward, H. K. Rassoul, R. Amin, 
-    and R. R. Anderson, A new model of the location of the plasmapause: 
-    CRRES results, J. Geophys. Res., 107(A11), 1339, 
+    M2002 -- Moldwin, M. B., L. Downward, H. K. Rassoul, R. Amin,
+    and R. R. Anderson, A new model of the location of the plasmapause:
+    CRRES results, J. Geophys. Res., 107(A11), 1339,
     doi:10.1029/2001JA009211, 2002.
     RT1970 -- Rycroft, M. J., and J. O. Thomas, The magnetospheric
     plasmapause and the electron density trough at the alouette i
@@ -97,6 +99,11 @@ def getPlasmaPause(ticks, model='M2002', LT='all', omnivals=None):
         requested local time sector, 'all' is valid option
     omnivals : spacepy.datamodel.SpaceData, dict
         dict-like containing UTC (datetimes) and Kp keys
+
+    Warns
+    =====
+    RuntimeWarning
+        If the CA1992 model is called with LT as it is not implemented 
 
     Returns
     =======
@@ -120,8 +127,8 @@ def getPlasmaPause(ticks, model='M2002', LT='all', omnivals=None):
     model_list = ['CA1992', 'M2002', 'RT1970']
 
     if model == 'CA1992':
-        if LT!='all':
-            print('No LT dependence currently supported for this model')
+        if LT != 'all':
+            warnings.warn('No LT dependence currently supported for CA1992 model', RuntimeWarning)
     if model not in model_list:
         raise ValueError("Please specify a valid model:\n{0}".format(' or '.join(model_list)))
 

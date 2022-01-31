@@ -45,14 +45,15 @@ Import the pycdf module.
 >>> from spacepy import pycdf
 
 Make a data set of :class:`~datetime.datetime`. These will be converted into
-CDF_EPOCH types.
+CDF_TIME_TT2000 types.
 
 >>> import datetime
 >>> # make a dataset every minute for a hour
 >>> time = [datetime.datetime(2000, 10, 1, 1, val) for val in range(60)]
 
 .. warning::
-    If you create a CDF in backwards compatibility mode (default),
+    If you create a CDF in backwards compatibility mode (using
+    :meth:`~spacepy.pycdf.Library.set_backward`),
     then :class:`~datetime.datetime` objects are degraded to CDF_EPOCH
     (millisecond resolution), not CDF_EPOCH16 (microsecond resolution).
 
@@ -107,7 +108,7 @@ The file is only accessed when data are requested. A full example using the abov
 >>> from spacepy import pycdf
 >>> cdf = pycdf.CDF('MyCDF.cdf')
 >>> print(cdf)
-    Epoch: CDF_EPOCH [60]
+    Epoch: CDF_TIME_TT2000 [60]
     data: CDF_FLOAT [60]
 >>> cdf['data'][4]
     0.8609974384307861
@@ -128,7 +129,7 @@ Then open the CDF, this looks the same and creation, but without mention of a ma
 The default ``__str__()`` and ``__repr__()`` behavior explains the contents, type, and size but not the data.
 
 >>> print(cdf)
-    Epoch: CDF_EPOCH [60]
+    Epoch: CDF_TIME_TT2000 [60]
     data: CDF_FLOAT [60]
 
 To access the data one has to request specific elements of the variable, similar to a Python list.
@@ -162,7 +163,7 @@ An example modifying the CDF created above:
     False
 >>> cdf['newVar'] = [1.0, 2.0]
 >>> print(cdf)
-    Epoch: CDF_EPOCH [60]
+    Epoch: CDF_TIME_TT2000 [60]
     data: CDF_FLOAT [60]
     newVar: CDF_FLOAT [2]
 >>> cdf.close()
@@ -185,7 +186,7 @@ Or contents can be changed
 The new variables appear immediately:
 
 >>> print(cdf)
-    Epoch: CDF_EPOCH [60]
+    Epoch: CDF_TIME_TT2000 [60]
     data: CDF_FLOAT [60]
     newVar: CDF_FLOAT [2]
 

@@ -12,6 +12,7 @@ import unittest
 from numpy import array
 import numpy.testing
 
+import spacepy_testing
 import spacepy
 import spacepy.omni as om
 
@@ -86,7 +87,7 @@ class OmniOtherTests(unittest.TestCase):
     def test_omnirange(self):
         expected = (datetime.datetime(1999, 7, 1, 14, 0), datetime.datetime(2001, 10, 11, 23, 0))
         actual = om.omnirange('Test')
-        self.assertTrue( array(expected == actual).all() )
+        numpy.testing.assert_equal(expected, actual)
         
 
 

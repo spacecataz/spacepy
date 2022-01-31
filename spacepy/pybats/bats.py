@@ -1,5 +1,5 @@
 '''
-A PyBats module for handling input, output, and visualization of 
+A PyBats module for handling input, output, and visualization of
 binary SWMF output files taylored to BATS-R-US-type data.
 
 .. currentmodule:: spacepy.pybats.bats
@@ -21,19 +21,20 @@ binary SWMF output files taylored to BATS-R-US-type data.
 import sys
 
 import numpy as np
-from spacepy.pybats import PbData, IdlFile, LogFile
+from spacepy.pybats import PbData, IdlFile, LogFile, calc_wrapper
 import spacepy.plot.apionly
 from spacepy.plot import set_target, applySmartTimeTicks
 from spacepy.datamodel import dmarray
 
 #### Module-level variables:
 # recognized species:
-mass = {'hp':1.0, 'op':16.0, 'he':4.0, 
+mass = {'hp':1.0, 'op':16.0, 'he':4.0,
         'sw':1.0, 'o':16.0, 'h':1.0, 'iono':1.0, '':1.0}
 
 RE = 6371000 # Earth radius in meters.
 
 #### Module-level functions:
+
 
 def _calc_ndens(obj):
     '''
@@ -44,7 +45,7 @@ def _calc_ndens(obj):
     by taking the mass-density variable, *Speciesrho*, and replacing *rho*
     with *N*.  Total number density is also saved as *N*.
 
-    Composition information is also saved by taking each species and 
+    Composition information is also saved by taking each species and
     calculating the percent of the total number density via
     *fracspecies* = 100% x *speciesN*/*N*.
 
@@ -55,8 +56,8 @@ def _calc_ndens(obj):
     assumed to be hyrogen.  The single atom/molecule mass is saved in the
     attributes of the new variable.
 
-    This function should be called by object methods of the same name.  
-    It is placed at the module level because it is used by many different 
+    This function should be called by object methods of the same name.
+    It is placed at the module level because it is used by many different
     classes.
 
     Parameters
@@ -76,7 +77,7 @@ def _calc_ndens(obj):
     >>> import spacepy.pybats.bats as pbs
     >>> mhd = pbs.Bats2d('spacepy-code/spacepy/pybats/slice2d_species.out')
     >>> pbs._calc_ndens(mhd)
-    
+
     '''
 
     species = []
@@ -84,15 +85,16 @@ def _calc_ndens(obj):
 
     # Get name of Rho (case sensitive check):
     rho = 'Rho'*('Rho' in obj) + 'rho'*('rho' in obj)
-    
+
     # Find all species: the variable names end or begin with "rho".
+    # Take care not to double-count.
     for k in obj:
         # Ends with rho?
-        if (k[-3:] == rho) and (k!=rho) and (k[:-3]+'N' not in obj):
+        if (k[-3:] == rho) and (k != rho) and (k[:-3] + 'N' not in obj):
             species.append(k)
             names.append(k[:-3])
         # Begins with rho?
-        if (k[:3]  == rho) and (k!=rho) and (k[3:] +'N' not in obj):
+        if (k[:3] == rho) and (k != rho) and (k[3:] + 'N' not in obj):
             species.append(k)
             names.append(k[3:])
 
@@ -106,18 +108,18 @@ def _calc_ndens(obj):
                                               'amu mass':m})
 
     # Total N is sum of individual  number densities.
-    obj['N'] = dmarray(np.zeros(obj[rho].shape), 
-                       attrs={'units':'$cm^{-3}$'}) 
+    obj['N'] = dmarray(np.zeros(obj[rho].shape),
+                       attrs={'units':'$cm^{-3}$'})
     if species:
         # Total number density:
-        for n in names: obj['N']+=obj[n+'N']
+        for n in names: obj['N'] += obj[n+'N']
         # Composition as fraction of total per species:
         for n in names:
             obj[n+'Frac'] = dmarray(100.*obj[n+'N']/obj['N'],
                                     {'units':'Percent'})
     else:
         # No individual species => no composition, simple ndens.
-        obj['N'] += dmarray(obj[rho], attrs={'units':'$cm^{-3}$'}) 
+        obj['N'] += dmarray(obj[rho], attrs={'units':'$cm^{-3}$'})
 
 
 #### Classes:
@@ -137,11 +139,11 @@ class BatsLog(LogFile):
 
     def fetch_obs_dst(self):
         '''
-        Fetch the observed Dst index for the time period covered in the 
+        Fetch the observed Dst index for the time period covered in the
         logfile.  Return *True* on success.
 
         Observed Dst is automatically fetched from the Kyoto World Data Center
-        via the :mod:`spacepy.pybats.kyoto` module.  The associated 
+        via the :mod:`spacepy.pybats.kyoto` module.  The associated
         :class:`spacepy.pybats.kyoto.KyotoDst` object, which holds the observed
         Dst, is stored as *self.obs_dst* for future use.
         '''
@@ -152,7 +154,8 @@ class BatsLog(LogFile):
         if hasattr(self, 'obs_dst'): return True
 
         # Start and end time to collect observations:
-        stime = self['time'][0]; etime = self['time'][-1]
+        stime = self['time'][0]
+        etime = self['time'][-1]
 
         # Attempt to fetch from Kyoto website:
         try:
@@ -166,11 +169,11 @@ class BatsLog(LogFile):
 
     def fetch_obs_sym(self):
         '''
-        Fetch the observed SYM-H index for the time period covered in the 
+        Fetch the observed SYM-H index for the time period covered in the
         logfile.  Return *True* on success.
 
         Observed SYM-H is automatically fetched from the Kyoto World Data Center
-        via the :mod:`spacepy.pybats.kyoto` module.  The associated 
+        via the :mod:`spacepy.pybats.kyoto` module.  The associated
         :class:`spacepy.pybats.kyoto.KyotoSym` object, which holds the observed
         Dst, is stored as *self.obs_sym* for future use.
         '''
@@ -181,7 +184,8 @@ class BatsLog(LogFile):
         if hasattr(self, 'obs_sym'): return True
 
         # Start and end time to collect observations:
-        stime = self['time'][0]; etime = self['time'][-1]
+        stime = self['time'][0]
+        etime = self['time'][-1]
 
         # Attempt to fetch from Kyoto website:
         try:
@@ -192,32 +196,32 @@ class BatsLog(LogFile):
             return False
 
         return True
-    
+
     def add_dst_quicklook(self, target=None, loc=111, plot_obs=False,
                           epoch=None, add_legend=True, plot_sym=False,
                           dstvar=None, lw=2.0, obs_kwargs={'ls':'-.'},
                           sym_kwargs={'ls':'-'}, **kwargs):
         '''
-        Create a quick-look plot of Dst (if variable present in file) 
+        Create a quick-look plot of Dst (if variable present in file)
         and compare against observations.
-        
+
         Like all *add_\* * methods in Pybats, the *target* kwarg determines
         where to place the plot.
-        If kwarg *target* is **None** (default), a new figure is 
+        If kwarg *target* is **None** (default), a new figure is
         generated from scratch.  If *target* is a matplotlib Figure
         object, a new axis is created to fill that figure at subplot location
-        *loc* (defaults to 111).  If target is a matplotlib Axes object, 
+        *loc* (defaults to 111).  If target is a matplotlib Axes object,
         the plot is placed into that axis at subplot location *loc*.
 
         With newer versions of BATS-R-US, new dst-like variables are included,
         named 'dst', 'dst-sm', 'dstflx', etc.  This subroutine will attempt
-        to first use 'dst-sm' as it is calculated consistently with 
+        to first use 'dst-sm' as it is calculated consistently with
         observations.  If not found, 'dst' is used.  Users may choose which
         value to use via the *dstvar* kwarg.
 
-        Observed Dst and SYM-H is automatically fetched from the Kyoto World 
-        Data Center via the :mod:`spacepy.pybats.kyoto` module.  The associated 
-        :class:`spacepy.pybats.kyoto.KyotoDst` or 
+        Observed Dst and SYM-H is automatically fetched from the Kyoto World
+        Data Center via the :mod:`spacepy.pybats.kyoto` module.  The associated
+        :class:`spacepy.pybats.kyoto.KyotoDst` or
         :class:`spacepy.pybats.kyoto.KyotoSym` object, which holds the observed
         Dst/SYM-H, is stored as *self.obs_dst* for future use.
         The observed line can be customized via the *obs_kwargs* kwarg, which
@@ -237,24 +241,24 @@ class BatsLog(LogFile):
             if 'dst_sm' in self:
                 dstvar = 'dst_sm'
             else: dstvar='dst'
-        
+
         if dstvar not in self:
             return None, None
 
-        fig, ax = set_target(target, figsize=(10,4), loc=loc)
+        fig, ax = set_target(target, figsize=(10, 4), loc=loc)
 
         if 'label' not in kwargs:
-            kwargs['label']='BATS-R-US $D_{ST}$ (Biot-Savart)'
+            kwargs['label'] = 'BATS-R-US $D_{ST}$ (Biot-Savart)'
 
         if 'label' not in obs_kwargs: obs_kwargs['label'] = 'Obs. Dst'
         if 'label' not in sym_kwargs: sym_kwargs['label'] = 'Obs. SYM-H'
 
         ax.plot(self['time'], self[dstvar], lw=lw, **kwargs)
-        ax.hlines(0.0, self['time'][0], self['time'][-1], 
+        ax.hlines(0.0, self['time'][0], self['time'][-1],
                   'k', ':', label='_nolegend_')
         applySmartTimeTicks(ax, self['time'])
         ax.set_ylabel('D$_{ST}$ ($nT$)')
-        ax.set_xlabel('Time from '+ self['time'][0].isoformat()+' UTC')
+        ax.set_xlabel('Time from ' + self['time'][0].isoformat()+' UTC')
 
         # Add observations (Dst and/or SYM-H):
         if(plot_obs):
@@ -265,7 +269,8 @@ class BatsLog(LogFile):
         if(plot_sym):
             # Attempt to fetch SYM-h observations, plot if success.
             if self.fetch_obs_sym():
-                ax.plot(self.obs_sym['time'],self.obs_sym['sym-h'],**sym_kwargs)
+                ax.plot(self.obs_sym['time'], self.obs_sym['sym-h'],
+                        **sym_kwargs)
                 applySmartTimeTicks(ax, self['time'])
 
         # Place vertical line at epoch:
@@ -274,21 +279,21 @@ class BatsLog(LogFile):
             ax.vlines(epoch, yrange[0], yrange[1], linestyles='dashed',
                       colors='k', linewidths=1.5)
             ax.set_ylim(yrange)
-                
+
         # Apply legend
         if add_legend: ax.legend(loc='best')
-        if target==None: fig.tight_layout()
-        
+        if target is None: fig.tight_layout()
+
         return fig, ax
-    
+
 class Extraction(PbData):
     '''
     A class for creating and visualizing extractions from other
-    :class:`~spacepy.pybats.PbData` 2D data sets.  Bilinear interpolation is 
+    :class:`~spacepy.pybats.PbData` 2D data sets.  Bilinear interpolation is
     used to obtain data between points.  At present, this class only
     works with :class:`~spacepy.pybats.bats.Bats2d` objects, but will be
-    generalized in the future.  Though it can be instantiated in typical 
-    fashion, It is best to create these objects via other object methods (e.g., 
+    generalized in the future.  Though it can be instantiated in typical
+    fashion, It is best to create these objects via other object methods (e.g.,
     :func:`~spacepy.pybats.bats.Bats2d.extract`)
 
     Parameters
@@ -316,8 +321,8 @@ class Extraction(PbData):
         # If our x, y locations are not numpy arrays, fix that.
         # Additionally, convert scalars to 1-element vectors.
         x, y = np.array(x), np.array(y)
-        if not x.shape: x=x.reshape(1)
-        if not y.shape: y=y.reshape(1)
+        if not x.shape: x = x.reshape(1)
+        if not y.shape: y = y.reshape(1)
 
         # Default: all variables are extracted except coordinates.
         if var_list == 'all':
@@ -330,14 +335,14 @@ class Extraction(PbData):
             var_list=[]
         else:
             raise TypeError('Kwarg var_list must be string, list, or None.')
-        
+
         # Stash var list, dataset internally:
         self._var_list = var_list
         self._dataset  = dataset
 
         # Extract along trace:
         self.extract(x, y)
-        
+
     def extract(self, xpts, ypts):
         # Perform actual extraction:
         from spacepy.pybats.batsmath import interp_2d_reg
@@ -345,13 +350,13 @@ class Extraction(PbData):
         # Some convenience variables:
         x, y = xpts, ypts
         data = self._dataset
-        
+
         for v, value in zip(data['grid'].attrs['dims'], (x, y)):
             self[v] = dmarray(value, attrs=data[v].attrs)
         # Create data object for holding extracted values.
         # One vector for each value w/ same units as parent object.
         for v in self._var_list:
-            self[v]=dmarray(np.zeros(x.shape), attrs=data[v].attrs)
+            self[v] = dmarray(np.zeros(x.shape), attrs=data[v].attrs)
 
         # Some helpers:
         xAll = data[data['grid'].attrs['dims'][0]]
@@ -369,8 +374,8 @@ class Extraction(PbData):
             if not pts.any(): continue
             locs = data.qtree[k].locs
             for v in self._var_list:
-                self[v][pts] = interp_2d_reg(x[pts], y[pts], xAll[locs], 
-                                             yAll[locs], data[v][locs]) 
+                self[v][pts] = interp_2d_reg(x[pts], y[pts], xAll[locs],
+                                             yAll[locs], data[v][locs])
 
 class Stream(Extraction):
     '''
@@ -412,12 +417,12 @@ class Stream(Extraction):
     maxPoints : int
         (Default : 20000) Maximum number of integration steps to take.
     var_list : string or sequence of strings
-        (Default : 'all') List of values to extract from *dataset*.  
+        (Default : 'all') List of values to extract from *dataset*.
         Defaults to 'all', for all values within *bats*.
 
     Notes
     -----
-    .. Not really "notes" but need to keep this section from being parsed 
+    .. Not really "notes" but need to keep this section from being parsed
        as parameters
 
     .. rubric:: Methods
@@ -434,11 +439,11 @@ class Stream(Extraction):
     .. automethod:: trace
     .. automethod:: plot
     '''
-    
+
     def __init__(self, bats, xstart, ystart, xfield, yfield, style = 'mag',
                  type='streamline', method='rk4', var_list='all',
                  extract=False, maxPoints=20000, *args, **kwargs):
-        
+
         # Key values:
         self.xstart = xstart #X and Y starting
         self.ystart = ystart #points in the field.
@@ -458,7 +463,7 @@ class Stream(Extraction):
         # dmarrays with the correct names.
         super(Stream, self).__init__(self.x, self.y, bats,
                                      var_list=var_list*extract)
-        
+
         # Place parameters into attributes:
         self.attrs['start']     = [xstart, ystart]
         self.attrs['trace_var'] = [xfield, yfield]
@@ -477,13 +482,13 @@ class Stream(Extraction):
         '''
         Set the line style either using a simple matplotlib-type style
         string or using a preset style type.  Current types include:
-        
+
         'mag' : treat line as a magnetic field line.  Closed lines are
                 white, other lines are black.
         '''
 
         import re
-        
+
         # Here, we can set line color and style based on
         # line characteristics.  Right now, only one preset is
         # available.
@@ -501,7 +506,7 @@ class Stream(Extraction):
                 self.color=col.groups()[0]
             else:
                 self.color='k'
-                
+
     def treetrace(self, bats, maxPoints=20000):
         '''
         Trace through the vector field using the quad tree.
@@ -520,7 +525,8 @@ class Stream(Extraction):
 
         # Find starting block and set starting locations.
         block = bats.find_block(self.xstart, self.ystart)
-        xfwd=[self.xstart]; yfwd=[self.ystart]
+        xfwd = [self.xstart]
+        yfwd = [self.ystart]
         xnow, ynow = self.xstart, self.ystart
 
         # Trace forwards.
@@ -533,20 +539,20 @@ class Stream(Extraction):
             else:
                 loc = bats.qtree[block].locs
             # Trace through this block.
-            x, y = trc(bats[self.xvar][loc], bats[self.yvar][loc], 
-                       xnow, ynow, bats[grid[0]][loc][0,:], 
+            x, y = trc(bats[self.xvar][loc], bats[self.yvar][loc],
+                       xnow, ynow, bats[grid[0]][loc][0,:],
                        bats[grid[1]][loc][:,0], ds=0.01)
             # Update location and block:
             xnow, ynow = x[-1], y[-1]
             newblock = bats.find_block(xnow,ynow)
             # If we didn't leave the block, stop tracing.
             # Additionally, if inside rBody, stop.
-            if(block==newblock) or (xnow**2+ynow**2)<bats.attrs['rbody']*.8 :
-                block=False
+            if(block == newblock) or (xnow**2+ynow**2) < bats.attrs['rbody'] * .8 :
+                block = False
             elif newblock:
-                block=newblock
+                block = newblock
             else:
-                block=False
+                block = False
             # Append to full trace vectors.
             xfwd = np.append(xfwd, x[1:])
             yfwd = np.append(yfwd, y[1:])
@@ -554,49 +560,50 @@ class Stream(Extraction):
             # It's possible to get stuck swirling around across
             # a few blocks.  If we spend a lot of time tracing,
             # call it quits.
-            if xfwd.size>maxPoints: block=False
+            if xfwd.size > maxPoints: block = False
 
         # Trace backwards.  Same Procedure as above.
         block = bats.find_block(self.xstart, self.ystart)
-        xbwd=[self.xstart]; ybwd=[self.ystart]
+        xbwd = [self.xstart]
+        ybwd = [self.ystart]
         xnow, ynow = self.xstart, self.ystart
         while(block):
             if hasattr(bats.qtree[block], 'ghost'):
                 loc = bats.qtree[block].ghost
             else:
                 loc = bats.qtree[block].locs
-            x, y = trc(bats[self.xvar][loc], bats[self.yvar][loc], 
-                       xnow, ynow, bats[grid[0]][loc][0,:], 
-                       bats[grid[1]][loc][:,0], ds=-0.01)
+            x, y = trc(bats[self.xvar][loc], bats[self.yvar][loc],
+                       xnow, ynow, bats[grid[0]][loc][0, :],
+                       bats[grid[1]][loc][:, 0], ds=-0.01)
             xnow, ynow = x[-1], y[-1]
-            newblock = bats.find_block(xnow,ynow)
-            if(block==newblock) or (xnow**2+ynow**2)<bats.attrs['rbody']*.8 :
-                block=False
+            newblock = bats.find_block(xnow, ynow)
+            if(block == newblock) or (xnow**2+ynow**2) < bats.attrs['rbody'] * .8:
+                block = False
             elif newblock:
-                block=newblock
+                block = newblock
             else:
-                block=False
+                block = False
             # Append to full trace vectors.
             xbwd = np.append(x[::-1], xbwd)
             ybwd = np.append(y[::-1], ybwd)
-            if xbwd.size>maxPoints: 
-                block=False
+            if xbwd.size > maxPoints:
+                block = False
 
         # Trim duplicate points created when backwards tracing.
         # There's always at least 1 duplicate.
         for i in range(1, xbwd.size):
             if xbwd[-(i+1)]-xfwd[0] != 0: break
-        
+
         # Combine foward and backward traces.
-        self.x = np.append(xbwd[:-i],xfwd)
-        self.y = np.append(ybwd[:-i],yfwd)
+        self.x = np.append(xbwd[:-i], xfwd)
+        self.y = np.append(ybwd[:-i], yfwd)
 
         # If planetary run w/ body:
         # 1) Check if line is closed to body.
         # 2) Trim points within body.
         if 'rbody' in bats.attrs:
             # Radial distance:
-            r = sqrt(self.x**2.0  + self.y**2.0)
+            r = sqrt(self.x**2.0 + self.y**2.0)
             # Closed field line?  Lobe line?  Set status:
             if (r[0] < bats.attrs['rbody']) and (r[-1] < bats.attrs['rbody']):
                 self.open   = False
@@ -609,7 +616,7 @@ class Stream(Extraction):
                 self.status = 'south lobe'
             # Trim the fat!
             limit = bats.attrs['rbody']*.8
-            self.x, self.y = self.x[r>limit], self.y[r>limit]
+            self.x, self.y = self.x[r > limit], self.y[r > limit]
 
     def trace(self, bats):
         '''
@@ -620,16 +627,16 @@ class Stream(Extraction):
             from spacepy.pybats.trace2d import trace2d_eul as trc
         elif self.method == 'rk4':
             from spacepy.pybats.trace2d import trace2d_rk4 as trc
-        
+
         # Get name of dimensions in order.
         grid = bats['grid'].attrs['dims']
 
         # Trace forward
-        x1, y1 = trc(bats[self.xvar], bats[self.yvar], 
+        x1, y1 = trc(bats[self.xvar], bats[self.yvar],
                      self.xstart, self.ystart,
                      bats[grid[0]], bats[grid[1]])
         # Trace backward
-        x2, y2 = trc(bats[self.xvar], bats[self.yvar], 
+        x2, y2 = trc(bats[self.xvar], bats[self.yvar],
                      self.xstart, self.ystart,
                      bats[grid[0]], bats[grid[1]], ds=-0.1)
         # Join lines together such that point 0 is beginning of line
@@ -639,41 +646,120 @@ class Stream(Extraction):
 
         # Check if line is closed to body.
         if 'rbody' in bats.attrs:
-            r1 = sqrt(self.x[0]**2.0  + self.y[0]**2.0)
+            r1 = sqrt(self.x[ 0]**2.0 + self.y[0]**2.0)
             r2 = sqrt(self.x[-1]**2.0 + self.y[-1]**2.0)
             if (r1 < bats.attrs['rbody']) and (r2 < bats.attrs['rbody']):
                 self.open = False
 
     def plot(self, ax, *args, **kwargs):
         '''
-        Add streamline to axes object "ax". 
+        Add streamline to axes object "ax".
         '''
         ax.plot(self.x, self.y, self.style, *args, **kwargs)
 
+
 class Bats2d(IdlFile):
     '''
-    A child class of :class:`~pybats.IdlFile` taylored to BATS-R-US output.
+    A child class of :class:`~pybats.IdlFile` tailored to 2D BATS-R-US output.
+
+    Calculations
+    ------------
+    New values can be added via the addition of new keys.  For example,
+    a user could add radial distance to an equatorial Bats2d object as follows:
+
+    >>> import numpy as np
+    >>> from spacepy.pybats import bats
+    >>> mhd = bats.Bats2d('z=0_example.out')
+    >>> mhd['rad'] = np.sqrt( mhd['x']**2 + mhd['y']**2 )
+
+    Note, however, that if the user switches the data frame in a *.outs file
+    to access data from a different epoch, these values will need to be
+    updated.
+
+    An exception to this is built-in `calc_*` methods, which perform common
+    MHD/fluid dynamic calculations (i.e., Alfven wave speed, vorticity, and
+    more.)  These values are updated when the data frame is switched (see the
+    `switch_frame` method).
+
+    Plotting
+    --------
+    While users can employ Matplotlib to plot values, a set of built-in
+    methods are available to expedite plotting.  These are the
+    `add_<plot type>` methods.  These methods always have the following
+    keyword arguments that allow users to optionally build more complicated
+    plots: *target* and *loc*.  The *target* kwarg tells the plotting method
+    where to place the plot and can either be a Matplotlib figure or axes
+    object.  If it's an axes object, *loc* sets the subplot location using
+    the typical matplotlib syntax (e.g., `loc=121`).  The default behavior is
+    to create a new figure and axes object.
+
+    This approach allows a user to over-plot contours, field lines, and
+    other plot artists as well as combine different subplots onto a single
+    figure.  Continuing with our example above, let's plot the grid layout
+    for our file as well as equatorial pressure and flow streamlines:
+
+    >>> import matplotlib.pyplot as plt
+    >>> fig = plt.Figure(figsize=(8,6))
+    >>> mhd.add_grid_plot(target=fig, loc=121)
+    >>> mhd.add_contour('x','y','p', target=fig, loc=122)
+    >>> mhd.add_stream_scatter('ux', 'uy', target=fig, loc=122)
+
+    Useful plotting methods include the following:
+
+    | Plot Method        | Description                                    |
+    | ------------------ | ---------------------------------------------- |
+    | add_grid_plot      | Create a quick-look diagram of the grid layout |
+    | add_contour        | Create a contour plot of a given variable      |
+    | add_pcolor         | Add a p-color (no-interpolation contour) plot  |
+    | add_stream_scatter | Scatter stream traces (any vector field)       |
+    | add_b_magsphere    | Add magnetic field lines for X-Z plane cuts    |
+    | add_planet         | Add a simple black/white planet at the origin  |
+    | add_body           | Add an inner boundary at the origin            |
+
+    Extracting and Stream Tracing
+    -----------------------------
+    Extracting values via interpolation to arbitrary points and creating
+    stream traces through any vector field (e.g., velocity or magnetic field)
+    are aided via the use of the following object methods:
+
+    | Method     | Description                                        |
+    | ---------- | -------------------------------------------------- |
+    | extract    | Interpolate to arbitrary points and extract values |
+    | get_stream | Integrate stream lines through vector fields       |
+
+
+    Be sure to read the docstring information of :class:`~pybats.IdlFile` to
+    see how to handle multi-frame files (*.outs) and for a list of critical
+    attributes.
+
     '''
     # Init by calling IdlFile init and then building qotree, etc.
-    def __init__(self, filename, format='binary'):
+    def __init__(self, filename, *args, **kwargs):
 
-        from spacepy.pybats import parse_filename_time
-        
+        # Create quad tree object attribute:
+        self._qtree = None
+
         # Read file.
-        IdlFile.__init__(self, filename, format=format, keep_case=False)
-
-        self._qtree=None
-
-        # Extract time from file name:
-        i_iter, runtime, time = parse_filename_time(self.attrs['file'])
-        if 'time' not in self.attrs: self.attrs['time'] = time
-        if 'iter' not in self.attrs: self.attrs['iter'] = i_iter
+        IdlFile.__init__(self, filename, keep_case=False, *args, **kwargs)
 
         # Behavior of output files changed Jan. 2017:
         # Check for 'r' instead of 'rbody' in attrs.
         if 'r' in self.attrs and 'rbody' not in self.attrs:
             self.attrs['rbody'] = self.attrs['r']
-        
+
+    def switch_frame(self, *args, **kwargs):
+        '''
+        For files that have more than one data frame (i.e., `*.outs` files),
+        load data from the *iframe*-th frame into the object replacing what is
+        currently loaded.
+        '''
+
+        # Reset our quad tree before reading our file:
+        self._qtree = None
+
+        # Switch frames using parent method:
+        super(Bats2d, self).switch_frame(*args, **kwargs)
+
     @property
     def qtree(self):
         if self._qtree is None:
@@ -686,16 +772,15 @@ class Bats2d(IdlFile):
             if self['grid'].attrs['gtype'] != 'Regular':
                 xdim, ydim = self['grid'].attrs['dims'][0:2]
                 try:
-                    self._qtree=qo.QTree(array([self[xdim],self[ydim]]))
+                    self._qtree = qo.QTree(array([self[xdim], self[ydim]]))
                 except:
                     from traceback import print_exc
                     print_exc()
-                    #print 'On dataset:',self.filename
-                    self._qtree=False
-                    self.find_block=lambda: False
+                    self._qtree = False
+                    self.find_block = lambda: False
             else:
-                self._qtree=False
-                self.find_block=lambda: False
+                self._qtree = False
+                self.find_block = lambda: False
 
         return self._qtree
 
@@ -710,11 +795,12 @@ class Bats2d(IdlFile):
     # CALCULATIONS
     ####################
 
+    @calc_wrapper
     def calc_temp(self, units='eV'):
         '''
         Calculate plasma temperature for each fluid.  Number density is
         calculated using *calc_ndens* if it hasn't been done so already.
-        
+
         Temperature is obtained via density and pressure through the simple
         relationship P=nkT.
 
@@ -732,9 +818,9 @@ class Bats2d(IdlFile):
                  'k'  : 72429626.47} # nPa/cm^3 --> K.
 
         # Calculate number density if not done already.
-        if not 'N' in self:
+        if 'N' not in self:
             self.calc_ndens()
-        
+
         # Find all number density variables.
         for key in list(self.keys()):
             # Next variable if not number density:
@@ -745,8 +831,9 @@ class Bats2d(IdlFile):
                 continue
             self[key[:-1]+'t'] = dmarray(
                 conv[units] * self[key[:-1]+'p']/self[key],
-                attrs = {'units':units})
+                attrs={'units':units})
 
+    @calc_wrapper
     def calc_b(self):
         '''
         Calculates total B-field strength using all three B components.
@@ -756,18 +843,19 @@ class Bats2d(IdlFile):
         from numpy import sqrt
 
         if 'b' in self: return
-        
+
         self['b'] = sqrt(self['bx']**2.0 + self['by']**2.0 + self['bz']**2.0)
-        self['b'].attrs={'units':self['bx'].attrs['units']}
+        self['b'].attrs = {'units':self['bx'].attrs['units']}
 
         self['bx_hat'] = self['bx'] / self['b']
         self['by_hat'] = self['by'] / self['b']
         self['bz_hat'] = self['bz'] / self['b']
 
-        self['bx_hat'].attrs={'units':'unitless'}
-        self['by_hat'].attrs={'units':'unitless'}
-        self['bz_hat'].attrs={'units':'unitless'}
+        self['bx_hat'].attrs = {'units':'unitless'}
+        self['by_hat'].attrs = {'units':'unitless'}
+        self['bz_hat'].attrs = {'units':'unitless'}
 
+    @calc_wrapper
     def calc_j(self):
         '''
         Calculates total current density strength using all three J components.
@@ -778,9 +866,10 @@ class Bats2d(IdlFile):
         self['j'] = sqrt(self['jx']**2.0 + self['jy']**2.0 + self['jz']**2.0)
         self['j'].attrs={'units':self['jx'].attrs['units']}
 
+    @calc_wrapper
     def calc_uperp(self):
         '''
-        Calculate the magnitude of the velocity perpendicular to the 
+        Calculate the magnitude of the velocity perpendicular to the
         magnetic field: $\vec{U} \times \hat{b}$.  Result maintains units
         of velocity.
 
@@ -789,7 +878,7 @@ class Bats2d(IdlFile):
         '''
 
         from numpy import sqrt
-        
+
         # Ensure b_hat is calculated:
         self.calc_b()
 
@@ -798,7 +887,7 @@ class Bats2d(IdlFile):
         for k in self:
             if (k[-2:]) == 'ux':
                 species.append(k[:-2])
-                
+
         # Calculate perpendicular velocity.  Separate step to avoid
         # changing dictionary while looping over keys.
         for s in species:
@@ -809,7 +898,8 @@ class Bats2d(IdlFile):
 
             # Get magnitude:
             self[s+'u_perp'] = sqrt(ux**2+uy**2+uz**2)
-        
+
+    @calc_wrapper
     def calc_upar(self):
         '''
         Calculate $\vec{U} \cdot \vec{B}$ and store as 'upar' in *self*.
@@ -828,7 +918,7 @@ class Bats2d(IdlFile):
         for k in self:
             if (k[-2:]) == 'ux':
                 species.append(k[:-2])
-                
+
         # Calculate U dot B.  Separate step to avoid
         # changing dictionary while looping over keys.
         for s in species:
@@ -836,42 +926,43 @@ class Bats2d(IdlFile):
                 self[s+'ux']*self['bx_hat']   \
                 + self[s+'uy']*self['by_hat'] \
                 + self[s+'uz']*self['bz_hat']
-        
+
+    @calc_wrapper
     def calc_E(self):
         '''
         Calculates the MHD electric field, -UxB.  Works for default
-        MHD units of nT and km/s; if these units are not correct, an 
+        MHD units of nT and km/s; if these units are not correct, an
         exception will be raised.  Stores E in mV/m.
 
-        Values are saved as self['Ex'], self['Ey'], self['Ez'], and 
+        Values are saved as self['Ex'], self['Ey'], self['Ez'], and
         self['E'].
         '''
-        from copy import copy
 
         # Some quick declarations for more readable code.
         ux = self['ux']; uy=self['uy']; uz=self['uz']
         bx = self['bx']; by=self['by']; bz=self['bz']
 
         # Check units.  Should be nT(=Volt*s/m^2) and km/s.
-        if (bx.attrs['units']!='nT') or (ux.attrs['units']!='km/s'):
+        if (bx.attrs['units'] != 'nT') or (ux.attrs['units'] != 'km/s'):
             raise Exception('Incorrect units!  Should be km/s and nT.')
 
         # Calculate; return in millivolts per meter
         self['Ex'] = -1.0*(uy*bz - uz*by) / 1000.0
         self['Ey'] = -1.0*(uz*bx - ux*bz) / 1000.0
         self['Ez'] = -1.0*(ux*by - uy*bx) / 1000.0
-        self['Ex'].attrs={'units':'mV/m'}
-        self['Ey'].attrs={'units':'mV/m'}
-        self['Ez'].attrs={'units':'mV/m'}
+        self['Ex'].attrs = {'units':'mV/m'}
+        self['Ey'].attrs = {'units':'mV/m'}
+        self['Ez'].attrs = {'units':'mV/m'}
 
         # Total magnitude.
         self['E'] = np.sqrt(self['Ex']**2+self['Ey']**2+self['Ez']**2)
-        
+
+    @calc_wrapper
     def calc_ndens(self):
         '''
-        Calculate number densities for each fluid.  Species mass is ascertained 
+        Calculate number densities for each fluid.  Species mass is ascertained
         via recognition of fluid name (e.g. OpRho is clearly oxygen).  A full
-        list of recognized fluids/species can be found by exploring the 
+        list of recognized fluids/species can be found by exploring the
         dictionary *mass* found in :mod:`~spacepy.pybats.bats`.  Composition is
         also calculated as percent of total number density.
 
@@ -881,10 +972,11 @@ class Bats2d(IdlFile):
 
         # Use shared function.
         _calc_ndens(self)
-                                
+
+    @calc_wrapper
     def calc_beta(self):
         '''
-        Calculates plasma beta (ratio of plasma to magnetic pressure, 
+        Calculates plasma beta (ratio of plasma to magnetic pressure,
         indicative of who - plasma or B-field - is "in charge" with regards
         to flow.
         Assumes:
@@ -897,16 +989,16 @@ class Bats2d(IdlFile):
         '''
         from numpy import pi
 
-        if not 'b' in self:
+        if 'b' not in self:
             self.calc_b()
-        mu_naught = 4.0E2 * pi # Mu_0 x unit conversion (nPa->Pa, nT->T)
+        mu_naught = 4.0E2 * pi  # Mu_0 x unit conversion (nPa->Pa, nT->T)
         temp_b = self['b']**2.0
-        temp_b[temp_b<1E-8] =  -1.0*mu_naught*self['p'][temp_b==0.0]
-        temp_beta=mu_naught*self['p']/temp_b
-        #temp_beta[self['b']<1E-9] = -1.0
-        self['beta']=temp_beta
-        self['beta'].attrs={'units':'unitless'}
+        temp_b[temp_b < 1E-8] = -1.0*mu_naught*self['p'][temp_b == 0.0]
+        temp_beta = mu_naught*self['p']/temp_b
+        self['beta'] = temp_beta
+        self['beta'].attrs = {'units':'unitless'}
 
+    @calc_wrapper
     def calc_jxb(self):
         '''
         Calculates the JxB force assuming:
@@ -922,26 +1014,27 @@ class Bats2d(IdlFile):
         # Unit conversion (nT, uA, cm^-3 -> nT, A, m^-3) to nN/m^3.
         conv = 1E-6
         # Calculate cross product, convert units.
-        self['jbx']=dmarray( (self['jy']*self['bz']-self['jz']*self['by'])*conv,
-                             {'units':'nN/m^3'})
-        self['jby']=dmarray( (self['jz']*self['bx']-self['jx']*self['bz'])*conv,
-                             {'units':'nN/m^3'})
-        self['jbz']=dmarray( (self['jx']*self['by']-self['jy']*self['bx'])*conv,
-                             {'units':'nN/m^3'})
-        self['jb'] =dmarray( sqrt(self['jbx']**2 +
+        self['jbx'] = dmarray((self['jy']*self['bz']-self['jz']*self['by'])*conv,
+                              {'units':'nN/m^3'})
+        self['jby'] = dmarray((self['jz']*self['bx']-self['jx']*self['bz'])*conv,
+                              {'units':'nN/m^3'})
+        self['jbz'] = dmarray((self['jx']*self['by']-self['jy']*self['bx'])*conv,
+                              {'units':'nN/m^3'})
+        self['jb'] = dmarray(sqrt(self['jbx']**2 +
                                   self['jby']**2 +
                                   self['jbz']**2), {'units':'nN/m^3'})
 
+    @calc_wrapper
     def calc_alfven(self):
         '''
-        Calculate the Alfven speed, B/(mu*rho)^(1/2) in km/s.  This is performed
-        for each species and the total fluid.
+        Calculate the Alfven speed, B/(mu*rho)^(1/2) in km/s.  This is
+        performed for each species and the total fluid.
         The variable is saved under key "alfven" in self.data.
         '''
         from numpy import sqrt, pi
         from spacepy.datamodel import dmarray
-        
-        if not 'b' in self:
+
+        if 'b' not in self:
             self.calc_b()
         #M_naught * conversion from #/cm^3 to kg/m^3
         mu_naught = 4.0E-7 * pi * 1.6726E-27 * 1.0E6
@@ -951,17 +1044,18 @@ class Bats2d(IdlFile):
         for k in self:
             if (k[-3:]) == 'rho':
                 rho_names.append(k)
-                
+
         # Calculate Alfven speed in km/s.  Separate step to avoid
         # changing dictionary while looping over keys.
         for k in rho_names:
-            self[k[:-3]+'alfven'] = dmarray(self['b']*1E-12 / 
+            self[k[:-3]+'alfven'] = dmarray(self['b']*1E-12 /
                                             sqrt(mu_naught*self[k]),
                                             attrs={'units':'km/s'})
 
+    @calc_wrapper
     def _calc_divmomen(self):
         '''
-        Calculate the divergence of momentum, i.e. 
+        Calculate the divergence of momentum, i.e.
         $\rho(u \dot \nabla)u$.
         This is currently exploratory.
         '''
@@ -969,65 +1063,65 @@ class Bats2d(IdlFile):
         from spacepy.datamodel import dmarray
         from spacepy.pybats.batsmath import d_dx, d_dy
 
-        if self.qtree==False:
+        if self.qtree == False:
             raise ValueError('calc_divmomen requires a valid qtree')
-        
+
         # Create empty arrays to hold new values.
         size = self['ux'].shape
         self['divmomx'] = dmarray(np.zeros(size), {'units':'nN/m3'})
         self['divmomz'] = dmarray(np.zeros(size), {'units':'nN/m3'})
 
         # Units!
-        c1 = 1000./6371.0 # km2/Re/s2 -> m/s2
-        c2 = 1.6726E-21   # AMU/cm3 -> kg/m3
-        c3 = 1E9          # N/m3 -> nN/m3.
+        c1 = 1000. / 6371.0  # km2/Re/s2 -> m/s2
+        c2 = 1.6726E-21      # AMU/cm3 -> kg/m3
+        c3 = 1E9             # N/m3 -> nN/m3.
 
         for k in self.qtree:
             # Calculate only on leafs of quadtree.
             if not self.qtree[k].isLeaf: continue
-            
+
             # Extract values from current leaf.
             leaf = self.qtree[k]
-            ux   = self['ux'][leaf.locs]
-            uz   = self['uz'][leaf.locs]
+            ux = self['ux'][leaf.locs]
+            uz = self['uz'][leaf.locs]
 
-            self['divmomx'][leaf.locs]=ux*d_dx(ux, leaf.dx)+uz*d_dy(ux, leaf.dx)
-            self['divmomz'][leaf.locs]=ux*d_dx(uz, leaf.dx)+uz*d_dy(uz, leaf.dx)
+            self['divmomx'][leaf.locs] = ux*d_dx(ux, leaf.dx)+uz*d_dy(ux, leaf.dx)
+            self['divmomz'][leaf.locs] = ux*d_dx(uz, leaf.dx)+uz*d_dy(uz, leaf.dx)
 
         # Unit conversion.
-        self['divmomx']*=self['rho']*c1*c2*c3
-        self['divmomz']*=self['rho']*c1*c2*c3
+        self['divmomx'] *= self['rho']*c1*c2*c3
+        self['divmomz'] *= self['rho']*c1*c2*c3
 
+    @calc_wrapper
     def calc_vort(self, conv=1000./RE):
         '''
         Calculate the vorticity (curl of bulk velocity) for the direction
-        orthogonal to the cut plane.  For example, if output file is 
+        orthogonal to the cut plane.  For example, if output file is
         a cut in the equatorial plane (GSM X-Y plane), only the z-component
         of the curl is calculated.
 
         Output is saved as self['wD'], where D is the resulting dimension
         (e.g., 'wz' for the z-component of vorticity in the X-Y plane).
 
-        Vorticity is calculated for total fluid and by-species for 
+        Vorticity is calculated for total fluid and by-species for
         multi-fluid output files.
 
         Parameters
         ==========
         None
-        
+
         Other Parameters
         ================
         conv : float
-           Required unit conversion such that output units are 1/s.  
-           Defaults to 1/RE (in km), which assumes grid is in RE and 
+           Required unit conversion such that output units are 1/s.
+           Defaults to 1/RE (in km), which assumes grid is in RE and
            velocity is in km/s.
         '''
 
         from spacepy.pybats.batsmath import d_dx, d_dy
 
-        if self.qtree==False:
+        if self.qtree is False:
             raise ValueError('calc_vort requires a valid qtree')
-
 
         # Determine which direction to calculate based on what direction
         # is not present.  Save appropriate derivative operators, order
@@ -1051,7 +1145,7 @@ class Bats2d(IdlFile):
         for k in self:
             if (k[-2:]) == 'ux':
                 species.append(k[:-2])
-                
+
         # Calculate vorticity by species.
         for s in species:
             # Create new arrays to hold curl.
@@ -1070,8 +1164,9 @@ class Bats2d(IdlFile):
 
                 # Calculate curl
                 self[s+w][leaf.locs] = conv * (dx1(u1, leaf.dx) - dx2(u2, leaf.dx))
-        
-        
+
+
+    @calc_wrapper
     def calc_gradP(self):
         '''
         Calculate the pressure gradient force.
@@ -1080,7 +1175,7 @@ class Bats2d(IdlFile):
         from spacepy.datamodel import dmarray
         from spacepy.pybats.batsmath import d_dx, d_dy
 
-        if self.qtree==False:
+        if self.qtree is False:
             raise ValueError('calc_gradP requires a valid qtree')
 
         if 'p' not in self:
@@ -1098,9 +1193,9 @@ class Bats2d(IdlFile):
             if not self.qtree[k].isLeaf: continue
 
             # Extract leaf; place pressure into 2D array.
-            leaf=self.qtree[k]
-            z=self['p'][leaf.locs]
-            
+            leaf = self.qtree[k]
+            z = self['p'][leaf.locs]
+
             # Calculate derivatives; place into new dmarrays.
             # Unit conversion: P in nPa => gradP in nN/m3, dx=Re
             # Convert to nN/m3 by multiplying by 6378000m**-1.
@@ -1110,12 +1205,12 @@ class Bats2d(IdlFile):
             self['gradP_'+dims[0]][leaf.locs] = d_dx(z, leaf.dx)*conv
             self['gradP_'+dims[1]][leaf.locs] = d_dy(z, leaf.dx)*conv
 
-        
         # Scalar magnitude:
         for d in dims:
             self['gradP'] += self['gradP_'+d]**2
         self['gradP'] = np.sqrt(self['gradP'])
 
+    @calc_wrapper
     def calc_utotal(self):
         '''
         Calculate bulk velocity magnitude: $u^2 = u_X^2 + u_Y^2 + u_Z^2$.
@@ -1135,14 +1230,15 @@ class Bats2d(IdlFile):
         units = self['ux'].attrs['units']
 
         for s in species:
-            self[s+'u'] = dmarray(sqrt( self[s+'ux']**2+
-                                        self[s+'uy']**2+
-                                        self[s+'uz']**2), 
+            self[s+'u'] = dmarray(sqrt(self[s+'ux']**2 +
+                                       self[s+'uy']**2 +
+                                       self[s+'uz']**2),
                                   attrs={'units':units})
 
+    @calc_wrapper
     def _calc_Ekin(self, units='eV'):
         '''
-        Calculate average kinetic energy per particle using 
+        Calculate average kinetic energy per particle using
         $E=\frac{1}{2}mv^2$.  Note that this is not the same as energy
         density.  Units are $eV$.
         '''
@@ -1150,24 +1246,23 @@ class Bats2d(IdlFile):
         from spacepy.datamodel import dmarray
 
         raise Warning("This calculation is unverified.")
-        
-        conv =  0.5 * 0.0103783625 # km^2-->m^2, amu-->kg, J-->eV.
+
+        conv = 0.5 * 0.0103783625  # km^2-->m^2, amu-->kg, J-->eV.
         if units.lower == 'kev':
-            conv=conv/1000.0
+            conv = conv/1000.0
 
         species = []
 
         # Find all species, the variable names end in "rho".
         for k in self:
-            #and (k!='rho') \
             if (k[-3:] == 'rho') and (k[:-3]+'Ekin' not in self):
                 species.append(k[:-3])
 
         for s in species:
             #THIS IS WRONG HERE: 1/2mV**2?  Notsomuch.
-            self[s+'Ekin'] = dmarray(sqrt( self[s+'ux']**2+
-                                           self[s+'uy']**2+
-                                           self[s+'uz']**2)
+            self[s+'Ekin'] = dmarray(sqrt(self[s+'ux']**2 +
+                                          self[s+'uy']**2 +
+                                          self[s+'uz']**2)
                                      * conv * mass[s.lower()],
                                      attrs={'units':units})
 
@@ -1193,8 +1288,8 @@ class Bats2d(IdlFile):
     def gradP_regular(self, cellsize=None, dim1range=-1, dim2range=-1):
         '''
         Calculate pressure gradient on a regular grid.
-        Note that if the Bats2d object is not on a regular grid, one of 
-        two things will happen.  If kwarg cellsize is set, the value of 
+        Note that if the Bats2d object is not on a regular grid, one of
+        two things will happen.  If kwarg cellsize is set, the value of
         cellsize will be used to call self.regrid and the object will
         be regridded using a cellsize of cellsize.  Kwargs dim1range and
         dim2range can be used in the same way they are used in self.regrid
@@ -1206,7 +1301,7 @@ class Bats2d(IdlFile):
         are force density (N/m^3).  Three variables are added to self.data:
         gradp(dim1), gradp(dim2), gradp.  For example, if the object is an
         equatorial cut, the variables gradpx, gradpy, and gradp would be
-        added representing the gradient in each direction and then the 
+        added representing the gradient in each direction and then the
         magnitude of the vector.
         '''
         from numpy import gradient, sqrt
@@ -1256,7 +1351,7 @@ class Bats2d(IdlFile):
 
     def vth(self,m_avg=3.1):
         """
-        Calculate the thermal velocity. m_avg denotes the average ion 
+        Calculate the thermal velocity. m_avg denotes the average ion
         mass in AMU.
 
         Result is stored in self['vth'].
@@ -1271,8 +1366,8 @@ class Bats2d(IdlFile):
         """
         Calculate the ion gyroradius in each cell.
 
-        velocities to use in calculating the gyroradius are listed by name in 
-        the sequence argument velocities. If more than one variable is given, 
+        velocities to use in calculating the gyroradius are listed by name in
+        the sequence argument velocities. If more than one variable is given,
         they are summed in quadrature.
 
         m_avg denotes the average ion mass in AMU.
@@ -1347,14 +1442,14 @@ class Bats2d(IdlFile):
 
     def regrid(self, cellsize=1.0, dim1range=-1, dim2range=-1, debug=False):
         '''
-        Re-bin data to regular grid of spacing cellsize.  Action is 
+        Re-bin data to regular grid of spacing cellsize.  Action is
         performed on all data entries in the bats2d object.
 
         '''
         from matplotlib.mlab import griddata
 
         if self['grid'].attrs['gtype'] == 'Regular': return
-        
+
         # Order our dimensions alphabetically.
         dims = self['grid'].attrs['dims']
         if debug: print("Ordered dimensions: ", dims)
@@ -1404,8 +1499,8 @@ class Bats2d(IdlFile):
     def extract(self, x, y, **kwargs):
         '''
         For x, y of a 1D curve, extract values along that curve
-        and return slice as a new :class:`~spacepy.pybats.bats.Extraction` 
-        object.  Valid keyword arguments are the same as for 
+        and return slice as a new :class:`~spacepy.pybats.bats.Extraction`
+        object.  Valid keyword arguments are the same as for
         :class:`~spacepy.pybats.bats.Extraction`.
         '''
 
@@ -1423,13 +1518,18 @@ class Bats2d(IdlFile):
         x and y set the starting point for the tracing.
 
         xvar and yvar are string keys to self.data that define the
-        vector field through which this function traces.  
+        vector field through which this function traces.
 
         The method kwarg sets the numerical method to use for the
         tracing.  Default is Runge-Kutta 4 (rk4).
         '''
-
-        stream = Stream(self, x, y, xvar, yvar, style=style, 
+        startvals = [x, y]
+        dims = self['grid'].attrs['dims']
+        for v, d in zip(startvals, dims):
+            if v < self[d].min() or v > self[d].max():
+                raise ValueError('Start value {} out of range for variable {}.'
+                                 .format(v, d))
+        stream = Stream(self, x, y, xvar, yvar, style=style,
                         maxPoints=maxPoints, method=method, extract=extract)
 
         return stream
@@ -1447,7 +1547,7 @@ class Bats2d(IdlFile):
         is created.  The subplot location is set by the kwarg "loc", which
         defaults to 111.  If target is an axis, the plot is placed into that
         axis object.  If target is None, a new figure and axis are created
-        and used to display the plot. 
+        and used to display the plot.
 
         Resolution labels can be disabled by setting kwarg do_label to False.
 
@@ -1480,7 +1580,7 @@ class Bats2d(IdlFile):
            Sets the color map used to color each region.  Must be a Matplotlib
            named colormap.  Defaults to 'jet_r'.
         title : string
-           Sets the title at the top of the plot.  Defaults to 
+           Sets the title at the top of the plot.  Defaults to
            'BATS-R-US Grid Layout'.
         '''
         import matplotlib.pyplot as plt
@@ -1532,10 +1632,10 @@ class Bats2d(IdlFile):
         Lines will be seeded randomly over a given spatial range given by
         *xlim* and *ylim* **OR** the range of the axes (if *target* is set to
         a non-empty axes object) **OR** over the entire object domain (in that
-        order).  
+        order).
 
         Extra keyword args are handed to matplotlib's LineCollection object:
-        :class:`matplotlib.collections.LineCollection`.  
+        :class:`matplotlib.collections.LineCollection`.
 
         Parameters
         ==========
@@ -1563,11 +1663,11 @@ class Bats2d(IdlFile):
         maxPoints : int
             Set the maximum number of points in a single trace.  Defaults to 1E6.
         narrow : int
-            Add "n" arrows to each line to indicate direction.  Default is 
-            zero, or no lines.  If narrow=1, arrows will be placed at 
+            Add "n" arrows to each line to indicate direction.  Default is
+            zero, or no lines.  If narrow=1, arrows will be placed at
             *start_points*.
         arrstyle : string
-            Set the arrow style in the same manner as Matplotlib's 
+            Set the arrow style in the same manner as Matplotlib's
             annotate function.  Default is '->'.
         arrsize : int
             Set the size, in points, of each directional arrow.  Default is 12.
@@ -1584,7 +1684,7 @@ class Bats2d(IdlFile):
         from numpy.random import sample
         from matplotlib.collections import LineCollection
         from spacepy.plot import add_arrows
-        
+
         # Set ax and fig based on given target.
         fig, ax = set_target(target, figsize=(10,10), loc=loc)
 
@@ -1600,19 +1700,19 @@ class Bats2d(IdlFile):
         if type(target) == type(ax):
             use_ax_lims = bool(ax.artists) and \
                 not(ax.get_xlim() == ax.get_ylim() == (0,1))
-        
-        # Set range over which to place lines.  Use keyword values OR
-        # axes ranges OR full domain (in that order).
-        if xlim is None:
+
+        # Set range over which to place lines.  Use keyword values if provided
+        # OR subset of axes ranges that fit in domain (if axes are reasonable)
+        if xlim == None:
+            xlim = [self[dims[0]].min(), self[dims[0]].max()]
             if use_ax_lims:
-                xlim = ax.get_xlim()
-            else:
-                xlim = [self[dims[0]].min(), self[dims[0]].max()]
-        if ylim is None:
+                axlim = ax.get_xlim()
+                xlim = [max(xlim[0], axlim[0]), min(xlim[1], axlim[1])]
+        if ylim == None:
+            ylim = [self[dims[1]].min(), self[dims[1]].max()]
             if use_ax_lims:
-                ylim = ax.get_ylim()
-            else:
-                ylim = [self[dims[1]].min(), self[dims[1]].max()]
+                axlim = ax.get_ylim()
+                ylim = [max(ylim[0], axlim[0]), min(ylim[1], axlim[1])]
 
         # If initial source points not given, create a random set:
         if start_points is None:
@@ -1635,7 +1735,7 @@ class Bats2d(IdlFile):
                                          method=method, maxPoints=maxPoints)
             except IndexError:
                 continue
-            
+
             lines.append(array([stream.x, stream.y][::1-2*flip]).transpose())
 
         # Create line collection & plot.
@@ -1653,35 +1753,35 @@ class Bats2d(IdlFile):
                        positions=start_points, style=arrstyle)
         elif narrow > 1:
             add_arrows(collect, n=narrow, size=arrsize, style=arrstyle)
-        
+
         return fig, ax, collect, start_points
-                         
+
     def find_earth_lastclosed(self, tol=np.pi/360., method='rk4',
                               max_iter=100, debug=False):
         '''
         For Y=0 cuts, attempt to locate the last-closed magnetic field line
-        for both day- and night-sides.  This is done using a bisection 
+        for both day- and night-sides.  This is done using a bisection
         approach to precisely locate the transition between open and closed
         geometries.  The method stops once this transition is found within
         a latitudinal tolerance of *tol*, which defaults to $\pi/360.$, or
         one-half degree.  The tracing *method* can be set via keyword and
-        defaults to 'rk4' (4th order Runge Kutta, see 
+        defaults to 'rk4' (4th order Runge Kutta, see
         :class:`~spacepy.pybats.bats.Stream` for more information).
         The maximum number of iterations the algorithm will take is set
         by *max_iter*, which defaults to 100.  Latitudinal footprints of the
         last closed field lines at the inner boundary (not the ionosphere!)
         are also returned.
 
-        This method returns 5 objects: 
-        
+        This method returns 5 objects:
+
         * The dipole tilt in radians
-        * A tuple of the northern/southern hemisphere polar angle of 
+        * A tuple of the northern/southern hemisphere polar angle of
           footpoints for the dayside last-closed field line.
         * A tuple of the northern/southern hemisphere polar angle of
           footpoints for the nightside last-closed field line.
-        * The dayside last-closed field line as a 
+        * The dayside last-closed field line as a
           :class:`~spacepy.pybats.bats.Stream` object.
-        * The nightside last-closed field line as a 
+        * The nightside last-closed field line as a
           :class:`~spacepy.pybats.bats.Stream` object.
 
         In each case, the angle is defined as elevation from the positive
@@ -1704,8 +1804,8 @@ class Bats2d(IdlFile):
         if debug:
             print('Dipole is tilted {} degress above the z=0 plane.'.format(
                 tilt*180./pi))
-        
-        # Dayside- start by tracing from plane of min |B| and perp. to that: 
+
+        # Dayside- start by tracing from plane of min |B| and perp. to that:
         R = self.attrs['rbody']*1.15
         s1 = self.get_stream(R*cos(tilt), R*sin(tilt), 'bx','bz', method=method)
 
@@ -1720,12 +1820,12 @@ class Bats2d(IdlFile):
             closed = not(s1.open)  # open or closed?
             isNig  = s1.x.mean()<0 # line on day or night side?
             isDay  = not isNig
-            
+
             # Adjust the angle towards the open-closed boundary.
             theta += (closed  and isDay)*dTheta # adjust nightwards.
             theta -= (s1.open or  isNig)*dTheta # adjust daywards.
             # Trace at the new theta to further restrict angular range:
-            s1 = self.get_stream(R*cos(theta), R*sin(theta), 'bx', 'bz', 
+            s1 = self.get_stream(R*cos(theta), R*sin(theta), 'bx', 'bz',
                                  method=method)
             # Reduce angular step:
             dTheta /= 2.
@@ -1738,10 +1838,10 @@ class Bats2d(IdlFile):
         isNig  = s1.x.mean()<0
         while (s1.open or isNig):
             theta-=tol/2 # inch daywards.
-            s1 = self.get_stream(R*cos(theta), R*sin(theta), 'bx', 'bz', 
+            s1 = self.get_stream(R*cos(theta), R*sin(theta), 'bx', 'bz',
                                  method=method)
             isNig  = s1.x.mean()<0
-            
+
         # Use last line to get southern hemisphere theta:
         npts = int(s1.x.size/2)
         r = sqrt(s1.x**2+s1.y**2) # Distance from origin.
@@ -1755,7 +1855,7 @@ class Bats2d(IdlFile):
 
         # Nightside: Use more points in tracing (lines are long!)
         theta+=tol/2.0  # Nudge nightwards.
-        
+
         # Set dTheta to half way between equator and dayside last-closed:
         dTheta=(pi+tilt-theta)/2.
 
@@ -1763,7 +1863,7 @@ class Bats2d(IdlFile):
         while (dTheta>tol)or(s1.open):
             nIter += 1
 
-            s1 = self.get_stream(R*cos(theta),R*sin(theta), 'bx','bz', 
+            s1 = self.get_stream(R*cos(theta),R*sin(theta), 'bx','bz',
                                  method=method, maxPoints=1E6)
             # Closed?  Nightside?
             closed = not(s1.open)
@@ -1776,16 +1876,16 @@ class Bats2d(IdlFile):
             # Don't cross over into dayside territory.
             if theta < theta_day[0]:
                 theta = theta_day[0]+tol
-                s1 = self.get_stream(R*cos(theta),R*sin(theta), 'bx','bz', 
+                s1 = self.get_stream(R*cos(theta),R*sin(theta), 'bx','bz',
                                      method=method, maxPoints=1E6)
                 if debug: print('No open flux over polar cap.')
                 break
-            
+
             dTheta /= 2.
             if nIter>max_iter:
                 if debug: print('Did not converge before reaching max_iter')
                 break
-            
+
         # Use last line to get southern hemisphere theta:
         npts = int(s1.x.size/2) # Similar to above for dayside.
         r = sqrt(s1.x**2+s1.y**2)
@@ -1798,8 +1898,8 @@ class Bats2d(IdlFile):
 
         return tilt, theta_day, theta_night, day, night
 
-    
-    def add_b_magsphere(self, target=None, loc=111,  style='mag', 
+
+    def add_b_magsphere(self, target=None, loc=111,  style='mag',
                         DoLast=True, DoOpen=True,
                         compX='bx',compY='bz', narrow=0, arrsize=12,
                         method='rk4', tol=np.pi/720., DoClosed=True,
@@ -1814,14 +1914,14 @@ class Bats2d(IdlFile):
         of the magnetosphere.
 
         A tuple containing the figure, axes, and LineCollection object
-        is returned.  
+        is returned.
 
         Basic styling (color and linestyle) can be handled with the
-        *style*, *colors*, and *linestyles* kwargs.  *style* can accept 
+        *style*, *colors*, and *linestyles* kwargs.  *style* can accept
         style names as defined in :class:`~spacepy.pybats.bats.Stream`, which
         colors and styles lines based on characteristics (e.g., open, closed).
         The default is 'mag', which colors open lines black and closed lines
-        white.  Alternatively, this kwarg works in a similar manner as 
+        white.  Alternatively, this kwarg works in a similar manner as
         it does in :function:`~matplotlib.pyplot.plot`,
         i.e., a string code such as "b-" (a solid blue line) or 'r:' (a
         dotted red line), etc.  Both *colors* and *linestyles* work much
@@ -1830,18 +1930,18 @@ class Bats2d(IdlFile):
         *colors* can be a CSS4 color name, an RGB tuple, or a string hex code.
         *linestyles* can be the name of the style (e.g., "dashed") or a
         shortcut compatable with the *style* kwarg (e.g., "--").  See the
-        documentation for the associated Matplotlib classes & functions to 
+        documentation for the associated Matplotlib classes & functions to
         see all options.  Note that *linestyles* and *colors* override
         *style*.
 
         If the styling kwargs are used, they will set the colors for all
-        lines except last-closed boundaries.  Users may control groups 
+        lines except last-closed boundaries.  Users may control groups
         individually using multiple calls and plotting one group at a time.
         Note that *colors* and *linestyles* kwargs will override *style*;
         *colors* allows for more flexibility concerning color choice.
 
         Algorithm:  This method, unlike its predecessor, starts by finding
-        the last closed field lines via 
+        the last closed field lines via
         :func:`~spacepy.pybats.bats.Bats2d.find_earth_lastclosed`.  It then
         fills the regions between the open and closed regions.  Currently, it
         does not treat purely IMF field lines.
@@ -1851,7 +1951,7 @@ class Bats2d(IdlFile):
         ========== ===========================================================
         target     The figure or axes to place the resulting lines.
         style      The color coding system for field lines.  Defaults to 'mag'.
-                   See :class:`spacepy.pybats.bats.Stream`.  Because lines are 
+                   See :class:`spacepy.pybats.bats.Stream`.  Because lines are
                    added as a :class:`~matplotlib.collections.LineCollection`,
                    only certain styles are allowed (i.e., line styles only,
                    no marker styles).
@@ -1859,17 +1959,17 @@ class Bats2d(IdlFile):
         DoLast     Plot last-closed lines as red lines.  Defaults to **True**.
         DoOpen     Plot open field lines.  Defaults to **True**.
         DoClosed   Plot closed field lines.  Defaults to **True**.
-        nOpen      Number of closed field lines to trace per hemisphere.  
+        nOpen      Number of closed field lines to trace per hemisphere.
                    Defaults to 5.
         nClosed    Number of open field lines to trace per hemisphere.
                    Defaults to 15.
         narrow     Add "n" arrows to each line to indicate direction.
                    Default is zero, or no arrows.
-        arrstyle   Set the arrow style in the same manner as Matplotlib's 
+        arrstyle   Set the arrow style in the same manner as Matplotlib's
                    annotate function.  Default is '->'.
         arrsize    Set the size, in points, of each directional arrow.
                    Default is 12.
-        method     The tracing method; defaults to 'rk4'.   See 
+        method     The tracing method; defaults to 'rk4'.   See
                    :class:`spacepy.pybats.bats.Stream`.
         tol        Tolerance for finding open-closed boundary; see
                    :func:`~spacepy.pybats.bats.Bats2d.find_earth_lastclosed`.
@@ -1878,11 +1978,11 @@ class Bats2d(IdlFile):
         colors     Matplotlib-compatable color name (single) to apply to lines.
         maxPoints  Set the maximum number of points in an field line
                    integration.  Defaults to one million.
-        linestyles A single line style indicator, defaults to '-'; 
-                   see :class:`~matplotlib.collections.LineCollection` for 
+        linestyles A single line style indicator, defaults to '-';
+                   see :class:`~matplotlib.collections.LineCollection` for
                    possible options.
         ========== ===========================================================
-        
+
         Extra kwargs are passed to Matplotlib's LineCollection class as
         described above.
 
@@ -1893,7 +1993,7 @@ class Bats2d(IdlFile):
         collect : matplotlib Collection object of trace results
 
         Examples
-        ========   
+        ========
         >>> import matplotlib.pyplot as plt
         >>> from spacepy.pybats import bats
         >>> # Open a 2D slice, add a pressure contour.
@@ -1909,10 +2009,10 @@ class Bats2d(IdlFile):
         import re
         import matplotlib.pyplot as plt
         from matplotlib.collections import LineCollection
-        from numpy import (arctan, cos, sin, where, pi, log, 
+        from numpy import (arctan, cos, sin, where, pi, log,
                            arange, sqrt, linspace, array)
         from spacepy.plot import add_arrows
-        
+
         # Set ax and fig based on given target.
         adj_lims = not(target) # If no target set, adjust axes limits.
         fig, ax = set_target(target, figsize=(10,10), loc=111)
@@ -1940,7 +2040,7 @@ class Bats2d(IdlFile):
         dTheta  = 1.5*np.pi/180.
         dThetaN = .05*np.abs(thetaN[0]-thetaD[0])
         dThetaS = .05*np.abs(thetaN[1]-thetaD[1])
-        
+
         ## Do closed field lines ##
         if DoClosed:
             for tDay, tNit in zip(
@@ -1957,7 +2057,7 @@ class Bats2d(IdlFile):
                 lines.append(array([sN.x, sN.y]).transpose())
                 cols.append(sD.color)
                 cols.append(sN.color)
-                
+
         ## Do open field lines ##
         if DoOpen:
             for tNorth, tSouth in zip(
@@ -1973,19 +2073,19 @@ class Bats2d(IdlFile):
                 lines.append(array([sD.x, sD.y]).transpose())
                 lines.append(array([sN.x, sN.y]).transpose())
                 cols.append(sD.color)
-                cols.append(sN.color)  
+                cols.append(sN.color)
 
         ## Finalize Collection ##
         # If colors is given, replace what is given from
         # individual lines.  Keep the list-approach, however.
         if colors: cols = [colors]*len(cols)
-                
+
         # Add last-closed field lines at end so they are plotted "on top".
         if DoLast:
             lines+=[array([last1.x,last1.y]).transpose(),
                     array([last2.x,last2.y]).transpose()]
             cols+=2*['r']
-            
+
         # Create line collection & plot.
         collect = LineCollection(lines, colors=cols, linestyles=linestyles,
                                  **kwargs)
@@ -1994,7 +2094,7 @@ class Bats2d(IdlFile):
         # Add lines if required:
         if narrow>0:
             add_arrows(collect, n=narrow, size=arrsize, style=arrstyle)
-        
+
         # On fresh axes, adjust limits from default ([0,1]):
         if adj_lims:
             # Set defaults:
@@ -2002,7 +2102,7 @@ class Bats2d(IdlFile):
 
             # Get x,y locations along each line:
             points = [path.vertices for path in collect.get_paths()]
-            
+
             # Get max/min from each line, update lims:
             for p in points:
                 xlim = min(xlim[0], p.min(0)[0]), max(xlim[1], p.max(0)[0])
@@ -2010,7 +2110,7 @@ class Bats2d(IdlFile):
 
             # Convert to arrays for element arithmatic:
             xlim, ylim = np.array(xlim), np.array(ylim)
-            
+
             # Add a buffer:
             dX, dY = min(5,xlim[1]-xlim[0]), min(5,ylim[1]-ylim[0])
             xlim+=(-dX, dX)
@@ -2019,7 +2119,7 @@ class Bats2d(IdlFile):
             # Set new axes limits:
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
-            
+
         return fig, ax, collect
 
     def add_b_magsphere_new(self, *args, **kwargs):
@@ -2030,14 +2130,14 @@ class Bats2d(IdlFile):
         '''
 
         import warnings
-        
+
         print('ATTENTION: add_b_magsphere_new is now simply add_b_magsphere')
         warnings.warn('add_b_magsphere_new is a candidate for removal',
                       category=DeprecationWarning)
         return add_b_magsphere(*args, **kwargs)
-    
-    def add_b_magsphere_legacy(self, target=None, loc=111, style='mag', 
-                               DoImf=False, DoOpen=False, DoTail=False, 
+
+    def add_b_magsphere_legacy(self, target=None, loc=111, style='mag',
+                               DoImf=False, DoOpen=False, DoTail=False,
                                DoDay=True, method='rk4', **kwargs):
         '''
         This object method is considered LEGACY and is a candidate for
@@ -2058,7 +2158,7 @@ class Bats2d(IdlFile):
         Method:
         First, the title angle is approximated by tracing a dipole-like
         field line and finding the point of maximum radial distance on
-        that line.  This is used as the magnetic equator.  From this 
+        that line.  This is used as the magnetic equator.  From this
         equator, many lines are traced starting at the central body
         radius.  More lines are grouped together at higher magnetic
         latitude to give good coverage at larger L-shells.  Once an
@@ -2070,12 +2170,12 @@ class Bats2d(IdlFile):
         outwards away from the furthest point from the last traced and
         closed field line.  This is repeated until open lines are found.
         '''
-        
+
         import matplotlib.pyplot as plt
         from matplotlib.collections import LineCollection
-        from numpy import (arctan, cos, sin, where, pi, log, 
+        from numpy import (arctan, cos, sin, where, pi, log,
                            arange, sqrt, linspace, array)
-        
+
         # Set ax and fig based on given target.
         fig, ax = set_target(target, figsize=(10,10), loc=loc)
 
@@ -2087,7 +2187,7 @@ class Bats2d(IdlFile):
         r = stream.x**2 + stream.y**2
         loc, = where(r==r.max())
         tilt = arctan(stream.y[loc[0]]/stream.x[loc[0]])
-        
+
         # Initial values:
         daymax   = tilt + pi/2.0
         nightmax = tilt + 3.0*pi/2.0
@@ -2118,21 +2218,21 @@ class Bats2d(IdlFile):
             for i, x in enumerate(arange(x_mp, 15.0, delx)):
                 # From dayside x-line out and up:
                 y =y_mp-x_mp+x
-                stream = self.get_stream(x, y, 'bx', 'bz', style=style, 
+                stream = self.get_stream(x, y, 'bx', 'bz', style=style,
                                          method=method)
                 lines.append(array([stream.x, stream.y]).transpose())
                 colors.append(stream.style[0])
 
                 # From top of magnetosphere down:
                 y =x_mp+15.0-x+delx/3.0
-                stream = self.get_stream(x-delx/3.0, y, 'bx', 'bz', 
+                stream = self.get_stream(x-delx/3.0, y, 'bx', 'bz',
                                          method=method, style=style)
                 lines.append(array([stream.x, stream.y]).transpose())
                 colors.append(stream.style[0])
 
                 # From bottom of mag'sphere down:
                 y =x_mp-10.0-x+2.0*delx/3.0
-                stream = self.get_stream(x-2.0*delx/3.0, y, 'bx', 
+                stream = self.get_stream(x-2.0*delx/3.0, y, 'bx',
                                          'bz', style=style, method=method)
                 lines.append(array([stream.x, stream.y]).transpose())
                 colors.append(stream.style[0])
@@ -2150,7 +2250,7 @@ class Bats2d(IdlFile):
             lines.append(array([stream.x, stream.y]).transpose())
             colors.append(stream.style[0])
 
-        
+
         # March down tail.
         stream = savestream
         r = sqrt(stream.x**2 + stream.y**2)
@@ -2162,7 +2262,7 @@ class Bats2d(IdlFile):
         while (x-1.5)>self['x'].min():
             #print "Closed extension at ", x-1.5, y
             #ax.plot(x-1.5, y, 'g^', ms=10)
-            stream = self.get_stream(x-1.5, y, 'bx', 'bz', style=style, 
+            stream = self.get_stream(x-1.5, y, 'bx', 'bz', style=style,
                                      method=method)
             r = sqrt(stream.x**2 + stream.y**2)
             if stream.open:
@@ -2190,7 +2290,7 @@ class Bats2d(IdlFile):
             xmore = arange(x, -100, -3.0)
             ymore = m*(xmore-x)+y
             for x, y  in zip(xmore[1:], ymore[1:]):
-                stream = self.get_stream(x, y, 'bx', 'bz', style=style, 
+                stream = self.get_stream(x, y, 'bx', 'bz', style=style,
                                          method=method)
                 lines.append(array([stream.x, stream.y]).transpose())
                 colors.append(stream.style[0])
@@ -2202,7 +2302,7 @@ class Bats2d(IdlFile):
                 x = self.attrs['rbody'] * cos(theta)
                 y = self.attrs['rbody'] * sin(theta)
                 stream = self.get_stream(x,y,'bx','bz', method=method)
-                if stream.open: 
+                if stream.open:
                     lines.append(array([stream.x, stream.y]).transpose())
                     colors.append(stream.style[0])
                 x = self.attrs['rbody'] * cos(theta+pi)
@@ -2227,7 +2327,7 @@ class Bats2d(IdlFile):
         using the "ax" keyword, the patch is added to the plot.
 
         Unlike the add_body method, the circle is colored half white (dayside)
-        and half black (nightside) to coincide with the direction of the 
+        and half black (nightside) to coincide with the direction of the
         sun. Additionally, because the size of the planet is not intrinsically
         known to the MHD file, the kwarg "rad", defaulting to 1.0, sets the
         size of the planet.
@@ -2241,16 +2341,16 @@ class Bats2d(IdlFile):
             raise KeyError('rbody not found in self.attrs!')
 
         body = Circle((0,0), rad, fc='w', zorder=1000, **extra_kwargs)
-        arch = Wedge((0,0), rad, 90.+ang, -90.+ang, fc='k', 
+        arch = Wedge((0,0), rad, 90.+ang, -90.+ang, fc='k',
                      zorder=1001, **extra_kwargs)
-        
+
         if ax != None:
             ax.add_artist(body)
             ax.add_artist(arch)
 
         return body, arch
 
-    def add_body(self, ax=None, facecolor='lightgrey', DoPlanet=True, ang=0.0, 
+    def add_body(self, ax=None, facecolor='lightgrey', DoPlanet=True, ang=0.0,
                  **extra_kwargs):
         '''
         Creates a circle of radius=self.attrs['rbody'] and returns the
@@ -2259,7 +2359,7 @@ class Bats2d(IdlFile):
         Default color is light grey; extra keywords are handed to the Ellipse
         generator function.
 
-        Because the body is rarely the size of the planet at the center of 
+        Because the body is rarely the size of the planet at the center of
         the modeling domain, add_planet is automatically called.  This can
         be negated by using the DoPlanet kwarg.
         '''
@@ -2277,25 +2377,25 @@ class Bats2d(IdlFile):
         if ax != None:
             ax.add_artist(body)
 
-    def add_pcolor(self, dim1, dim2, value, zlim=None, target=None, loc=111, 
+    def add_pcolor(self, dim1, dim2, value, zlim=None, target=None, loc=111,
                    title=None, xlabel=None, ylabel=None,
                    ylim=None, xlim=None, add_cbar=False, clabel=None,
                    add_body=True, dolog=False, *args, **kwargs):
-        '''        
-        Create a pcolor plot of variable **value** against **dim1** on the 
+        '''
+        Create a pcolor plot of variable **value** against **dim1** on the
         x-axis and **dim2** on the y-axis.  Pcolor plots shade each
-        computational cell with the value at the cell center.  Because no 
+        computational cell with the value at the cell center.  Because no
         interpolation or smoothing is used in the visualization, pcolor plots
         are excellent for examining the raw output.
-        
+
         Simple example:
 
         >>> self.add_pcolor('x', 'y', 'rho')
 
-        If kwarg **target** is None (default), a new figure is 
+        If kwarg **target** is None (default), a new figure is
         generated from scratch.  If target is a matplotlib Figure
         object, a new axis is created to fill that figure at subplot
-        location **loc**.  If **target** is a matplotlib Axes object, 
+        location **loc**.  If **target** is a matplotlib Axes object,
         the plot is placed into that axis.
 
         Four values are returned: the matplotlib Figure and Axes objects,
@@ -2360,12 +2460,12 @@ class Bats2d(IdlFile):
         # Add cbar if necessary.
         if add_cbar:
             cbar=plt.colorbar(pcol, ax=ax, pad=0.01)
-            if clabel==None: 
+            if clabel==None:
                 clabel="%s (%s)" % (value, self[value].attrs['units'])
             cbar.set_label(clabel)
         else:
             cbar=None # Need to return something, even if none.
- 
+
         # Set title, labels, axis ranges (use defaults where applicable.)
         if title: ax.set_title(title)
         if ylabel==None: ylabel='%s ($R_{E}$)'%dim2.upper()
@@ -2398,25 +2498,25 @@ class Bats2d(IdlFile):
         else: ang=0.0
         if add_body: self.add_body(ax, ang=ang)
 
-        return fig, ax, pcol, cbar                              
+        return fig, ax, pcol, cbar
 
-    def add_contour(self, dim1, dim2, value, nlev=30, target=None, loc=111, 
+    def add_contour(self, dim1, dim2, value, nlev=30, target=None, loc=111,
                     title=None, xlabel=None, ylabel=None,
                     ylim=None, xlim=None, add_cbar=False, clabel=None,
                     filled=True, add_body=True, dolog=False, zlim=None,
                     *args, **kwargs):
         '''
-        Create a contour plot of variable **value** against **dim1** on the 
+        Create a contour plot of variable **value** against **dim1** on the
         x-axis and **dim2** on the y-axis.
-        
+
         Simple example:
 
         >>> self.add_contour('x', 'y', 'rho')
 
-        If kwarg **target** is None (default), a new figure is 
+        If kwarg **target** is None (default), a new figure is
         generated from scratch.  If target is a matplotlib Figure
         object, a new axis is created to fill that figure at subplot
-        location **loc**.  If **target** is a matplotlib Axes object, 
+        location **loc**.  If **target** is a matplotlib Axes object,
         the plot is placed into that axis.
 
         Four values are returned: the matplotlib Figure and Axes objects,
@@ -2445,7 +2545,7 @@ class Bats2d(IdlFile):
         import numbers
         import matplotlib.pyplot as plt
         from matplotlib.colors import (LogNorm, Normalize)
-        from matplotlib.ticker import (LogLocator, LogFormatter, 
+        from matplotlib.ticker import (LogLocator, LogFormatter,
                                        LogFormatterMathtext, MultipleLocator)
 
         # Set ax and fig based on given target.
@@ -2461,9 +2561,9 @@ class Bats2d(IdlFile):
         # Set contour command based on grid type.
         if self['grid'].attrs['gtype'] != 'Regular':  # Non-uniform grids.
             if filled:
-                contour=ax.tricontourf   
+                contour=ax.tricontourf
             else:
-                contour=ax.tricontour   
+                contour=ax.tricontour
         else:   # Uniform grids.
             if filled:
                 contour=ax.contourf
@@ -2472,7 +2572,7 @@ class Bats2d(IdlFile):
 
         # Create levels and set norm based on dolog.
         if dolog:
-            levs = np.power(10, np.linspace(np.log10(zlim[0]), 
+            levs = np.power(10, np.linspace(np.log10(zlim[0]),
                                             np.log10(zlim[1]), nlev))
             z=np.where(self[value]>zlim[0], self[value], 1.01*zlim[0])
             norm=LogNorm()
@@ -2491,12 +2591,12 @@ class Bats2d(IdlFile):
         # Add cbar if necessary.
         if add_cbar:
             cbar=plt.colorbar(cont, ax=ax, ticks=ticks, format=fmt, pad=0.01)
-            if clabel==None: 
+            if clabel==None:
                 clabel="%s (%s)" % (value, self[value].attrs['units'])
             cbar.set_label(clabel)
         else:
             cbar=None # Need to return something, even if none.
- 
+
         # Set title, labels, axis ranges (use defaults where applicable.)
         if title: ax.set_title(title)
         if ylabel==None: ylabel='%s ($R_{E}$)'%dim2.upper()
@@ -2538,7 +2638,7 @@ class ShellSlice(IdlFile):
     onto a spherical slice in 1, 2, or 3 dimensions.  Some examples
     include radial or azimuthal lines, spherical shells, or 3D wedges.
 
-    The *Shell* class reads and handles these output types.  
+    The *Shell* class reads and handles these output types.
     '''
 
     def __init__(self, filename, format='binary', *args, **kwargs):
@@ -2554,7 +2654,7 @@ class ShellSlice(IdlFile):
 
         ### Create some helper variables for plotting and calculations
         d2r = np.pi/180. # Convert degrees to radians.
-        
+
         # Get grid spacing.  If npoints ==1, set to 1 to avoid math errors.
         self.drad = (self['r'][  -1] - self['r'][  0])/max(self['grid'][0]-1,1)
         self.dlon = (self['lon'][-1] - self['lon'][0])/max(self['grid'][1]-1,1)
@@ -2569,7 +2669,7 @@ class ShellSlice(IdlFile):
         self.phi   = d2r*self.lon
         self.theta = d2r*(90-self.lat)
 
-        
+    @calc_wrapper
     def calc_urad(self):
         '''
         Calculate radial velocity.
@@ -2581,6 +2681,7 @@ class ShellSlice(IdlFile):
 
         self['ur'] = dmarray(ur, {'units':self['ux'].attrs['units']})
 
+    @calc_wrapper
     def calc_radflux(self, var, conv=1000. * (100.0)**3):
         '''
         For variable *var*, calculate the radial flux of *var* through each
@@ -2589,17 +2690,18 @@ class ShellSlice(IdlFile):
         '''
 
         if var+'_rflx' in self: return
-        
+
         # Make sure we have radial velocity.
         if 'ur' not in self: self.calc_urad()
 
         # Calc flux:
         self[var+'_rflx'] = self[var] * self['ur'] * conv
 
+    @calc_wrapper
     def calc_radflu(self, var):
         '''
-        For variable *var*, calculate the radial fluence, or the 
-        spatially integrated radial flux through 2D surfaces of 
+        For variable *var*, calculate the radial fluence, or the
+        spatially integrated radial flux through 2D surfaces of
         constant radius.
 
         Resulting variable stored as "var_rflu".  Result will be an array
@@ -2609,20 +2711,20 @@ class ShellSlice(IdlFile):
         # Need at least 2D in angle space:
         if self.dphi==0 or self.dtheta==0:
             raise ValueError('Fluence can only be calculated for 2D+ surfaces.')
-        
+
         # Trim flux off of val name:
         if '_rflx' in var: var = var[:-5]
-        
+
         # Convenience:
         flux = var + '_rflx'
         flu  = var + '_rflu'
-        
+
         # Make sure flux exists:
         if flux not in self: self.calc_radflux(var)
         if flu in self: return
 
         # Create output container, one point per radial distance:
-        self[flu] = np.zeros( self['grid'][0] ) 
+        self[flu] = np.zeros( self['grid'][0] )
 
         # Integrate over all radii.
         # Units: convert R to km and cm-3 to km.
@@ -2649,7 +2751,7 @@ class ShellSlice(IdlFile):
         import matplotlib.pyplot as plt
         from matplotlib.patches import Circle
         from matplotlib.colors import (LogNorm, Normalize)
-        from matplotlib.ticker import (LogLocator, LogFormatter, 
+        from matplotlib.ticker import (LogLocator, LogFormatter,
                                        LogFormatterMathtext, MultipleLocator)
 
         fig, ax = set_target(target, figsize=(10,10), loc=loc, polar=True)
@@ -2666,7 +2768,7 @@ class ShellSlice(IdlFile):
 
         # Create levels and set norm based on dolog.
         if dolog:  # Log space!
-            levs = np.power(10, np.linspace(np.log10(zlim[0]), 
+            levs = np.power(10, np.linspace(np.log10(zlim[0]),
                                             np.log10(zlim[1]), nlev))
             z=np.where(self[value]>zlim[0], self[value], 1.01*zlim[0])
             norm=LogNorm()
@@ -2694,7 +2796,7 @@ class ShellSlice(IdlFile):
         # Add cbar if necessary.
         if add_cbar:
             cbar=plt.colorbar(cnt, ax=ax, ticks=ticks, format=fmt, shrink=.85)
-            if clabel==None: 
+            if clabel==None:
                 clabel="{} ({})".format(value, self[value].attrs['units'])
             cbar.set_label(clabel)
         else:
@@ -2712,8 +2814,8 @@ class ShellSlice(IdlFile):
             txt = '{:02.0f}'.format(theta)+r'$^{\circ}$'
             ax.text(pi/4., 90.-theta, txt, color='w', weight='extra bold',**opts)
             ax.text(pi/4., 90.-theta, txt, color='k', weight='light', **opts)
-        
-        # Use MLT-type labels. 
+
+        # Use MLT-type labels.
         lt_labels = ['Noon', '18', '00',   '06']
         xticks    = [     0, pi/2,   pi, 3*pi/2]
         xticks = np.array(xticks) + rotate
@@ -2721,34 +2823,34 @@ class ShellSlice(IdlFile):
         # Apply x-labels:
         ax.set_xticks(xticks)
         ax.set_xticklabels(lt_labels)
-        
+
         return fig, ax, cnt, cbar
 
-        
+
 class Mag(PbData):
     '''
     A container for data from a single BATS-R-US virtual magnetometer.  These
     work just like a typical :class:`spacepy.pybats.PbData` object.  Beyond
     raw magnetometer data, additional values are calculated and stored,
-    including total pertubations (the sum of all global and ionospheric 
+    including total pertubations (the sum of all global and ionospheric
     pertubations as measured by the magnetometer).  Users will be interested
-    in methods :meth:`~spacepy.pybats.bats.Mag.add_comp_plot` and 
+    in methods :meth:`~spacepy.pybats.bats.Mag.add_comp_plot` and
     :meth:`~spacepy.pybats.bats.Mag.calc_dbdt`.
 
     Instantiation is best done through :class: `spacepy.pybats.MagFile`
-    objects, which load and parse organize many virtual magnetometers from a 
+    objects, which load and parse organize many virtual magnetometers from a
     single output file into a single object.  However, they can be created
-    manually, though painfully.  Users must instantiate by handing the 
+    manually, though painfully.  Users must instantiate by handing the
     new object the number of lines that will be parsed (rather, the number
-    of data points that will be needed), a time vector, and (optionally) 
-    the list of variables coming from the GM and IE module.  While the 
+    of data points that will be needed), a time vector, and (optionally)
+    the list of variables coming from the GM and IE module.  While the
     latter two are keyword arguments, at least one should be provided.
     Next, the arrays whose keys were given by the *gmvars* and *ievars*
     keyword arguments in the instantiation step can either be filled manually
     or by using the :meth:`~spacepy.pybats.bats.Mag.parse_gmline` and
-    :meth:`~spacepy.pybats.bats.Mag.parse_ieline` methods to parse lines of 
+    :meth:`~spacepy.pybats.bats.Mag.parse_ieline` methods to parse lines of
     ascii data from a magnetometer output file.  Finally, the
-    :meth:`~spacepy.pybats.bats.Mag.recalc` method should be called to 
+    :meth:`~spacepy.pybats.bats.Mag.recalc` method should be called to
     calculate total perturbation.
     '''
 
@@ -2760,7 +2862,7 @@ class Mag(PbData):
 
         self['time']=time
         self.attrs['nlines']=nlines
-        
+
         self['x']=np.zeros(nlines)
         self['y']=np.zeros(nlines)
         self['z']=np.zeros(nlines)
@@ -2770,16 +2872,16 @@ class Mag(PbData):
             self[key]=np.zeros(nlines)
         for key in ievars:
             self['ie_'+key]=np.zeros(nlines)
-            
+
     def parse_gmline(self, i, line, namevar):
         '''
         Parse a single line from a GM_mag*.out file and put into
-        the proper place in the magnetometer arrays.  The line should 
+        the proper place in the magnetometer arrays.  The line should
         have the same number of variables as was initially given to the
         :class:`~spacepy.pybats.bats.Mag` object.  This method is best
         used through the :class:`~spacepy.pybats.bats.MagFile` class interface.
 
-        Usage: 
+        Usage:
 
         >>> self.parse_gmline(i, line, namevar)
 
@@ -2796,13 +2898,13 @@ class Mag(PbData):
     def parse_ieline(self, i, line, namevar):
         '''
         Parse a single line from a IE_mag*.out file and put into
-        the proper place in the magnetometer arrays.  The line should 
+        the proper place in the magnetometer arrays.  The line should
         have the same number of variables as was initially given to the
         :class:`~spacepy.pybats.bats.Mag` object.  This method is best
         used through the :class:`~spacepy.pybats.bats.MagFile` class interface.
 
 
-        Usage: 
+        Usage:
 
         >>> self.parse_gmline(i, line, namevar)
 
@@ -2816,17 +2918,17 @@ class Mag(PbData):
     def _recalc(self):
         '''
         Calculate total :math:`\Delta B` from GM and IE; store under object keys
-        *totaln*, *totale*, and *totald* (one for each component of the HEZ 
+        *totaln*, *totale*, and *totald* (one for each component of the HEZ
         coordinate system).
 
-        This function should only be called to correct legacy versions of 
+        This function should only be called to correct legacy versions of
         magnetometer files.
         '''
         from numpy import sqrt, zeros
 
         # If values already exist, do not overwrite.
         if 'dBn' in self: return
-        
+
         # New containers:
         self['totaln']=np.zeros(self.attrs['nlines'])
         self['totale']=np.zeros(self.attrs['nlines'])
@@ -2851,7 +2953,7 @@ class Mag(PbData):
         for key in list(self.keys()):
             if key in varmap:
                 self[ varmap[key] ] = self.pop(key)
-            
+
     def calc_h(self):
         '''
         Calculate the total horizontal perturbation, 'H', using the pythagorean
@@ -2862,7 +2964,7 @@ class Mag(PbData):
         '''
 
         allvars = list(self.keys())
-        
+
         for v in allvars:
             # Find all dB-north variables:
             if v[:3] == 'dBn':
@@ -2872,23 +2974,23 @@ class Mag(PbData):
 
     def calc_dbdt(self):
         '''
-        Calculate the time derivative of all dB-like variables and save as 
-        'dBdt[direction][component].  For example, the time derivative of 
+        Calculate the time derivative of all dB-like variables and save as
+        'dBdt[direction][component].  For example, the time derivative of
         dBeMhd will be saved as dBdteMhd.
 
-        |dB/dt|_h is also calculated following the convention of 
+        |dB/dt|_h is also calculated following the convention of
         Pulkkinen et al, 2013:
         $|dB/dt|_H = \sqrt{(\dB_N/dt)^2 + (dB_E/dt)^2}$
 
         A 2nd-order accurate centeral difference method is used to
-        calculate the time derivative.  For the first and last points, 
-        2nd-order accurate forward and backward differences are taken, 
+        calculate the time derivative.  For the first and last points,
+        2nd-order accurate forward and backward differences are taken,
         respectively.
         '''
 
         # Do not calculate twice.
         if 'dBdtn' in self: return
-        
+
         # Get dt values:
         dt = np.array([x.total_seconds() for x in np.diff(self['time'])])
 
@@ -2914,8 +3016,8 @@ class Mag(PbData):
 
 
         self['dBdth'] = np.sqrt(self['dBdtn']**2+self['dBdte']**2)
-            
-    def add_plot(self, value, style='-', target=None, loc=111, label=None, 
+
+    def add_plot(self, value, style='-', target=None, loc=111, label=None,
                  **kwargs):
         '''
         Plot **value**, which should be a key corresponding to a data vector
@@ -2923,7 +3025,7 @@ class Mag(PbData):
         against the object's *time*.  The **target** kwarg specifies the
         destination of the plot.  If not set, **target** defaults to None and
         a new figure and axis will be created.  If target is a matplotlib
-        figure, a new axis is created at subplot location 111 (which can be 
+        figure, a new axis is created at subplot location 111 (which can be
         changed
         using kwarg **loc**).  If target is a matplotlib Axes object, the line
         is added to the plot as if ``Axes.plot()`` was used.  The line label,
@@ -2936,19 +3038,19 @@ class Mag(PbData):
         All extra kwargs are handed to ``Axes.plot``, allowing the user to set
         any additional options (e.g., line color and style, etc.).
 
-        Three values are returned: the Figure object, Axis object, and 
+        Three values are returned: the Figure object, Axis object, and
         newly created line object.  These can be used to further customize
         the figure, axis, and line as necessary.
 
-        Example: Plot total :math:`\Delta B_N` onto an existing axis with line 
+        Example: Plot total :math:`\Delta B_N` onto an existing axis with line
         color blue, line style dashed, and line label "Wow!":
 
         >>> self.plot('dBn', target='ax', label='Wow!', lc='b', ls='--')
 
         Example: Plot total :math:`\Delta B_N` on a new figure, save returned
-        values and overplot additional values on the returned axis.  Default 
+        values and overplot additional values on the returned axis.  Default
         labels and line styles are used in this example.
-        
+
         >>> fig, ax, line = self.plot('n')
         >>> self.plot('dBe', target = ax)
 
@@ -2964,28 +3066,28 @@ class Mag(PbData):
 
         line=ax.plot(self['time'], self[value], style, label=label, **kwargs)
         applySmartTimeTicks(ax, self['time'], dolabel=True)
-        
+
         return fig, ax
 
     def add_comp_plot(self, direc, target=None, add_legend=True,
                       loc=111, lw=2.0):
         '''
-        Create a plot with,  or add to an existing plot, an illustration of 
+        Create a plot with,  or add to an existing plot, an illustration of
         how the
         separate components sum together to make the total disturbance in a
-        given orthongal direction (arg **direc**).  The three possible 
+        given orthongal direction (arg **direc**).  The three possible
         components are 'n' (northwards, towards the magnetic pole), 'e'
         (eastwards), or 'd' (downwards towards the center of the Earth.)  The
-        components of the total disturbance in any on direction are 
+        components of the total disturbance in any on direction are
         magnetospheric currents ('gm_dB'), gap-region field-aligned currents
         ('gm_facdB'), and ionospheric Hall and Pederson currents ('ie_Jp' and
-        'ie_Jh').  
+        'ie_Jh').
 
         Example usage:
-        
+
         >>> self.add_comp_plot('n')
 
-        This will create a new plot with the total disturbance in the 'n' 
+        This will create a new plot with the total disturbance in the 'n'
         direction along with line plots of each component that builds this
         total.  This method uses the familiar PyBats **target** kwarg system
         to allow users to add these plots to existing figures or axes.
@@ -2993,7 +3095,7 @@ class Mag(PbData):
         Parameters
         ==========
         direc : string
-           Indicate the direction to plot: either 'n', 'e', 'd', or 
+           Indicate the direction to plot: either 'n', 'e', 'd', or
            'h' if calculated.
 
         Other Parameters
@@ -3026,9 +3128,9 @@ class Mag(PbData):
         colors={prefix+'Mhd':'#FF6600', prefix+'Fac':'r',
                 prefix+'Hal':'b',       prefix+'Ped':'c',
                 prefix:'k'}
-        
+
         # Labels:
-        labels={prefix+'Mhd':r'$J_{Mag}$',  prefix+'Fac':r'$J_{Gap}$', 
+        labels={prefix+'Mhd':r'$J_{Mag}$',  prefix+'Fac':r'$J_{Gap}$',
                 prefix+'Hal':r'$J_{Hall}$', prefix+'Ped':r'$J_{Peder}$',
                 prefix:r'Total $\Delta B'+'_{}$'.format(direc)}
 
@@ -3040,33 +3142,33 @@ class Mag(PbData):
 
         # Ticks, zero-line, and legend:
         applySmartTimeTicks(ax, self['time'], True, True)
-        ax.hlines(0.0, self['time'][0], self['time'][-1], 
+        ax.hlines(0.0, self['time'][0], self['time'][-1],
                   linestyles=':', lw=2.0, colors='k')
         if add_legend: ax.legend(ncol=3, loc='best')
-    
+
         # Axis labels:
         ax.set_ylabel(r'$\Delta B_{%s}$ ($nT$)'%(direc.upper()))
 
         if target==None: fig.tight_layout()
-        
+
         return fig, ax
 
 class MagFile(PbData):
     '''
     BATS-R-US magnetometer files are powerful tools for both research and
-    operations.  :class:`~spacepy.pybats.bats.MagFile` objects open, parse, 
+    operations.  :class:`~spacepy.pybats.bats.MagFile` objects open, parse,
     and visualize such output.
 
     The $\delta B$ calculated by the SWMF requires two components: GM (BATSRUS)
     and IE (Ridley_serial).  The data is spread across two files: GM_mag*.dat
-    and IE_mag*.dat.  The former contains $\delta B$ caused by gap-region 
-    (i.e., inside the inner boundary) FACs and the changing global field.  
-    The latter contains the $\delta B$ caused by Pederson and Hall 
+    and IE_mag*.dat.  The former contains $\delta B$ caused by gap-region
+    (i.e., inside the inner boundary) FACs and the changing global field.
+    The latter contains the $\delta B$ caused by Pederson and Hall
     currents in the ionosphere.  :class:`~spacepy.pybats.bats.MagFile` objects
     can open one or both of these files at a time; when both are opened, the
     total $\delta B$ is calculated and made available to the user.
 
-    Usage: 
+    Usage:
 
     >>> # Open up the GM magnetometer file only.
     >>> obj = spacepy.pybats.bats.MagFile('GM_file.mag')
@@ -3077,15 +3179,15 @@ class MagFile(PbData):
     >>> # Open up the GM magnetometer file; search for the IE file.
     >>> obj = spacepy.pybats.bats.MagFile('GM_file.mag', find_ie=True)
 
-    Note that the **find_ie** kwarg uses a simple search assuming the data 
+    Note that the **find_ie** kwarg uses a simple search assuming the data
     remain in a typical SWMF-output organizational tree (i.e., if the results
-    of a simulation are in folder *results*, the GM magnetometer file can be 
+    of a simulation are in folder *results*, the GM magnetometer file can be
     found in *results/GM/* or *results/GM/IO2/* while the IE file can be found
     in *results/IE/* or *results/IE/ionosphere/*).  It will also search the
     present working directory.  This method is not robust; the user must take
     care to ensure that the two files correspond to each other.
     '''
-    
+
     def __init__(self, filename, ie_name=None, find_ie=False, *args, **kwargs):
 
         from glob import glob
@@ -3110,8 +3212,8 @@ class MagFile(PbData):
 
         # Set legacy mode to handle old variable names:
         self.legacy = find_ie or bool(ie_name)
-            
-            
+
+
         self.readfiles()
 
     def readfiles(self):
@@ -3221,15 +3323,15 @@ class MagFile(PbData):
 
         # Sum up IE/GM components if necessary (legacy only):
         if self.legacy: self._recalc()
-        
+
         # Get time res.
         self.attrs['dt']=(self['time'][1]-self['time'][0]).seconds/60.0
-        
+
     def _recalc(self):
         '''
         Old magnetometer files had different variable names and did not
         contain the total perturbation.  This function updates variable names
-        and sums all contributions from all models/regions to get total 
+        and sums all contributions from all models/regions to get total
         :math:`\Delta B`.
 
         This function is only required for legacy results.  New versions of
@@ -3242,7 +3344,7 @@ class MagFile(PbData):
     def calc_h(self):
         '''
         For each magnetometer object, calculate the horizontal component of
-        the perturbations using the pythagorean sum of the two horizontal 
+        the perturbations using the pythagorean sum of the two horizontal
         components (north-south and east-west components):
 
         $\Delta B_H = \sqrt{\Delta B_N^2 + \Delta B_E^2}$
@@ -3256,20 +3358,20 @@ class MagFile(PbData):
         For each magnetometer object, calculate the horizontal component of
         the perturbations.
 
-        |dB/dt|_h is also calculated following the convention of 
+        |dB/dt|_h is also calculated following the convention of
         Pulkkinen et al, 2013:
         $|dB/dt|_H = \sqrt{(\dB_N/dt)^2 + (dB_E/dt)^2}$
         '''
         for k in self:
             if k=='time' or k=='iter': continue
             self[k].calc_dbdt()
-            
+
 class MagGridFile(IdlFile):
     '''
-    Magnetometer grids are a recent addition to BATS-R-US: instead of 
-    specifying a small set of individual stations, the user can specify a 
+    Magnetometer grids are a recent addition to BATS-R-US: instead of
+    specifying a small set of individual stations, the user can specify a
     grid of many stations spanning a latitude/longitude range.  The files
-    are output in the usual :class:`spacepy.pybats.IdlFile` format.  This 
+    are output in the usual :class:`spacepy.pybats.IdlFile` format.  This
     class handles the reading, manipulating, and visualization of these files.
     '''
 
@@ -3277,7 +3379,7 @@ class MagGridFile(IdlFile):
         import re
         from spacepy.pybats import parse_filename_time
         from spacepy.coordinates import Coords
-        
+
         # Initialize as an IdlFile.
         super(MagGridFile, self).__init__(header=None, *args, **kwargs)
 
@@ -3306,7 +3408,8 @@ class MagGridFile(IdlFile):
         #if coord == 'GEO':
         #    self['Lat_geo']=self['Lat']
         #    self['Lon_geo']=self['Lon']
-                
+
+    @calc_wrapper
     def calc_h(self):
         '''
         Calculate the total horizontal perturbation, 'h', using the pythagorean
@@ -3314,7 +3417,7 @@ class MagGridFile(IdlFile):
         '''
 
         allvars = list(self.keys())
-        
+
         for v in allvars:
             # Find all dB-north variables:
             if v[:3] == 'dBn':
@@ -3322,7 +3425,7 @@ class MagGridFile(IdlFile):
                 self[v.replace('dBn', 'dBh')] = dmarray(
                     np.sqrt(self[v]**2+self[v_east]**2), {'units':'nT'})
 
-    def add_contour(self, value, nlev=30, target=None, loc=111, 
+    def add_contour(self, value, nlev=30, target=None, loc=111,
                     title=None, xlabel=None, ylabel=None,
                     ylim=None, xlim=None, add_cbar=False, clabel=None,
                     filled=True, dolog=False, zlim=None,
@@ -3333,7 +3436,7 @@ class MagGridFile(IdlFile):
         '''
 
         from spacepy.pybats import mhdname_to_tex
-        
+
         import matplotlib.pyplot as plt
         from matplotlib.colors import (LogNorm, Normalize)
         from matplotlib.ticker import (LogLocator, LogFormatter, FuncFormatter,
@@ -3369,7 +3472,7 @@ class MagGridFile(IdlFile):
 
                 # Create levels and set norm based on dolog.
         if dolog:
-            levs = np.power(10, np.linspace(np.log10(zlim[0]), 
+            levs = np.power(10, np.linspace(np.log10(zlim[0]),
                                             np.log10(zlim[1]), nlev))
             z=np.where(self[value]>zlim[0], self[value], 1.01*zlim[0])
             norm=LogNorm()
@@ -3381,7 +3484,7 @@ class MagGridFile(IdlFile):
             norm=None
             ticks=MultipleLocator((zlim[1]-zlim[0])/10) ### fix this
             fmt=None
-                
+
         # Add Contour to plot:
         cont = contour(self['Lon'], self['Lat'], np.array(np.transpose(z)),
                        levs, *args, norm=norm, **kwargs)
@@ -3396,7 +3499,7 @@ class MagGridFile(IdlFile):
             cbar.set_label(clabel)
         else:
             cbar=None # Need to return something, even if none.
- 
+
         # Set title, labels, axis ranges (use defaults where applicable.)
         if title: ax.set_title(title)
         coord_sys = self['grid'].attrs['coord']
@@ -3412,7 +3515,7 @@ class MagGridFile(IdlFile):
                                   '{:4.1f}'.format(x)+r'$^{\circ}$')
             ax.xaxis.set_major_formatter(fmttr)
             ax.yaxis.set_major_formatter(fmttr)
-            
+
         # If a brand-new figure was created, use tight-layout.
         if target==None: fig.tight_layout()
 
@@ -3431,13 +3534,13 @@ class MagGridFile(IdlFile):
         from spacepy.pybats.batsmath import interp_2d_reg as intp
 
         return intp(lats, lons, self['Lat'], self['Lon'], self[var])
-    
-    
+
+
 class GeoIndexFile(LogFile):
     '''
     Geomagnetic Index files are a specialized BATS-R-US output that contain
     geomagnetic indices calculated from simulated ground-based magnetometers.
-    Currently, the only index instituted is Kp through the faKe_p setup.  
+    Currently, the only index instituted is Kp through the faKe_p setup.
     Future work will expand the system to include Dst, AE, etc.
 
     GeoIndFiles are a specialized subclass of pybats.LogFile.  It includes
@@ -3450,7 +3553,7 @@ class GeoIndexFile(LogFile):
 
     def __init__(self, filename, keep_case=True, *args, **kwargs):
         '''
-        Load ascii file located at self.attrs['file'].  
+        Load ascii file located at self.attrs['file'].
         '''
         # Call super __init__:
         super(GeoIndexFile, self).__init__(filename, *args, **kwargs)
@@ -3467,15 +3570,15 @@ class GeoIndexFile(LogFile):
             self.attrs['lat'] = float(parts[parts.index('Lat')+1])
         if 'K9' in head:
             self.attrs['k9']  = float(parts[parts.index('K9') +1])
-                                         
+
 
     def fetch_obs_kp(self):
         '''
-        Fetch the observed Kp index for the time period covered in the 
+        Fetch the observed Kp index for the time period covered in the
         logfile.  Return *True* on success.
 
         Observed Kp is automatically fetched from the Kyoto World Data Center
-        via the :mod:`spacepy.pybats.kyoto` module.  The associated 
+        via the :mod:`spacepy.pybats.kyoto` module.  The associated
         :class:`spacepy.pybats.kyoto.KyotoKp` object, which holds the observed
         kp, is stored as *self.obs_kp* for future use.
         '''
@@ -3500,11 +3603,11 @@ class GeoIndexFile(LogFile):
 
     def fetch_obs_ae(self):
         '''
-        Fetch the observed AE index for the time period covered in the 
+        Fetch the observed AE index for the time period covered in the
         logfile.  Return *True* on success.
 
         Observed AE is automatically fetched from the Kyoto World Data Center
-        via the :mod:`spacepy.pybats.kyoto` module.  The associated 
+        via the :mod:`spacepy.pybats.kyoto` module.  The associated
         :class:`spacepy.pybats.kyoto.KyotoAe` object, which holds the observed
         AE, is stored as *self.obs_ae* for future use.
         '''
@@ -3525,10 +3628,10 @@ class GeoIndexFile(LogFile):
             raise Warning('Failed to fetch Kyoto AE: ', args)
             return False
 
-        return True   
+        return True
 
-    def add_kp_quicklook(self, target=None, loc=111, label=None, 
-                         plot_obs=False, add_legend=True, 
+    def add_kp_quicklook(self, target=None, loc=111, label=None,
+                         plot_obs=False, add_legend=True,
                          obs_kwargs={'c':'k', 'ls':'--', 'lw':2}, **kwargs):
         '''
         Similar to "dst_quicklook"-type functions, this method fetches observed
@@ -3541,9 +3644,9 @@ class GeoIndexFile(LogFile):
         Other kwargs customize the line.  Label defaults to fa$K$e$_{P}$, extra
         kwargs are passed to pyplot.plot.
 
-        Observed Kp can be added via the *plot_obs* kwarg.  Kp is automatically 
-        fetched from the Kyoto World Data Center via the 
-        :mod:`spacepy.pybats.kyoto` module.  The associated 
+        Observed Kp can be added via the *plot_obs* kwarg.  Kp is automatically
+        fetched from the Kyoto World Data Center via the
+        :mod:`spacepy.pybats.kyoto` module.  The associated
         :class:`spacepy.pybats.kyoto.KyotoKp` object, which holds the observed
         Kp, is stored as *self.obs_kp* for future use.
         The observed line can be customized via the *obs_kwargs* kwarg, which
@@ -3553,7 +3656,7 @@ class GeoIndexFile(LogFile):
 
         # Set up plot target.
         fig, ax = set_target(target, figsize=(10,4), loc=loc)
-        
+
         # Create label:
         if not(label):
             label = 'fa$K$e$_{P}$'
@@ -3579,15 +3682,15 @@ class GeoIndexFile(LogFile):
                 self.obs_kp.add_histplot(target=ax, **obs_kwargs)
                 applySmartTimeTicks(ax, self['time'])
 
-        if add_legend: ax.legend(loc='best')       
+        if add_legend: ax.legend(loc='best')
         return fig, ax
 
-    def add_ae_quicklook(self, target=None, loc=111, label=None, 
-                         plot_obs=False, val='AE', add_legend=True, 
+    def add_ae_quicklook(self, target=None, loc=111, label=None,
+                         plot_obs=False, val='AE', add_legend=True,
                          obs_kwargs={'c':'k', 'ls':'--', 'lw':1.5}, **kwargs):
         '''
         Similar to "dst_quicklook"-type functions, this method fetches observed
-        AE indices from the web and plots it alongside the corresponding 
+        AE indices from the web and plots it alongside the corresponding
         AE read from the GeoInd file.  Because there are four AE-like indices
         (AL, AU, AE, and AO), the kwarg *val* specifies which to plot
         (default is AE).
@@ -3599,9 +3702,9 @@ class GeoIndexFile(LogFile):
 
         Other kwargs customize the line.  Extra kwargs are passed to pyplot.plot
 
-        Observed AE can be added via the *plot_obs* kwarg.  AE is automatically 
-        fetched from the Kyoto World Data Center via the 
-        :mod:`spacepy.pybats.kyoto` module.  The associated 
+        Observed AE can be added via the *plot_obs* kwarg.  AE is automatically
+        fetched from the Kyoto World Data Center via the
+        :mod:`spacepy.pybats.kyoto` module.  The associated
         :class:`spacepy.pybats.kyoto.KyotoAe` object, which holds the observed
         AE, is stored as *self.obs_kp* for future use.
         The observed line can be customized via the *obs_kwargs* kwarg, which
@@ -3611,7 +3714,7 @@ class GeoIndexFile(LogFile):
 
         # Set up plot target.
         fig, ax = set_target(target, figsize=(10,4), loc=loc)
-        
+
         if not(label):
             label = 'Virtual {}'.format(val)
 
@@ -3624,7 +3727,7 @@ class GeoIndexFile(LogFile):
 
         if plot_obs:
             # Check for label in obs. kwargs:
-            if 'label' not in obs_kwargs: obs_kwargs['label'] = 'Obs. '+val    
+            if 'label' not in obs_kwargs: obs_kwargs['label'] = 'Obs. '+val
 
             if self.fetch_obs_ae():
                 ax.plot(self.obs_ae['time'], self.obs_ae[val.lower()],
@@ -3633,7 +3736,7 @@ class GeoIndexFile(LogFile):
 
         if add_legend: ax.legend(loc='best')
 
-                
+
         return fig, ax
 
 class VirtSat(LogFile):
@@ -3670,9 +3773,9 @@ class VirtSat(LogFile):
 
     def calc_ndens(self):
         '''
-        Calculate number densities for each fluid.  Species mass is ascertained 
+        Calculate number densities for each fluid.  Species mass is ascertained
         via recognition of fluid name (e.g. OpRho is clearly oxygen).  A full
-        list of recognized fluids/species can be found by exploring the 
+        list of recognized fluids/species can be found by exploring the
         dictionary *mass* found in :mod:`~spacepy.pybats.bats`.  Composition is
         also calculated as percent of total number density.
 
@@ -3681,12 +3784,12 @@ class VirtSat(LogFile):
         '''
 
         _calc_ndens(self)
-        
+
     def calc_temp(self, units='eV'):
         '''
         Calculate plasma temperature for each fluid.  Number density is
         calculated using *calc_ndens* if it hasn't been done so already.
-        
+
         Temperature is obtained via density and pressure through the simple
         relationship P=nkT.
 
@@ -3706,7 +3809,7 @@ class VirtSat(LogFile):
         # Calculate number density if not done already.
         if not 'N' in self:
             self.calc_ndens()
-        
+
         # Find all number density variables.
         for key in list(self.keys()):
             # Next variable if not number density:
@@ -3739,7 +3842,7 @@ class VirtSat(LogFile):
         magnetic dynamics about geosychronous orbit, the tail, and other
         locations.
 
-        This function calculates the magnetic inclination for the Virtual 
+        This function calculates the magnetic inclination for the Virtual
         Satellite object and saves it as *b_incl*.  Units default to degrees;
         the keyword **units** can be changed to 'rad' to change this.
         '''
@@ -3756,7 +3859,7 @@ class VirtSat(LogFile):
             raise ValueError('Unrecognized units.  Use "deg" or "rad"')
 
         return True
-            
+
     def get_position(self, time):
         '''
         For an arbitrary time, *time*, return a tuple of coordinates for
@@ -3768,7 +3871,7 @@ class VirtSat(LogFile):
         a sequence of either.
         The satellite's position is interpolated (linearly) to *time*.
         '''
-        
+
         from matplotlib.dates import date2num
 
         # Test if sequence.
@@ -3783,8 +3886,8 @@ class VirtSat(LogFile):
 
         # Interpolate, using "try" as to not pass time limits and extrapolate.
         try:
-            loc = (self._interp['x'](time), 
-                   self._interp['y'](time), 
+            loc = (self._interp['x'](time),
+                   self._interp['y'](time),
                    self._interp['z'](time))
         except ValueError:
             loc = (None, None, None)
@@ -3795,16 +3898,16 @@ class VirtSat(LogFile):
                     dolabel=False, size=12, c='k', **kwargs):
         '''
         For a given axes, *target*, add the location of the satellite at
-        time *time* as a circle.  If kwarg *dolabel* is True, the satellite's 
+        time *time* as a circle.  If kwarg *dolabel* is True, the satellite's
         name will be used to label the dot.  Optional kwargs are any accepted by
         matplotlib.axes.Axes.plot.  The kwarg *plane* specifies the plane
         of the plot, e.g., 'XY', 'YZ', etc.
         '''
-        
+
         # Get Axes' limits:
         xlim = target.get_xlim()
         ylim = target.get_ylim()
-            
+
         plane=plane.lower()
         loc = self.get_position(time)
         if None in loc: return
@@ -3819,12 +3922,12 @@ class VirtSat(LogFile):
         if dolabel:
             xoff = 0.03*(xlim[1]-xlim[0])
             if dobox:
-                target.text(x+xoff,y,self.attrs['name'], 
+                target.text(x+xoff,y,self.attrs['name'],
                             bbox={'fc':'w','ec':'k'},size=size, va='center')
             else:
-                target.text(x+xoff,y,self.attrs['name'], 
+                target.text(x+xoff,y,self.attrs['name'],
                             size=size, va='center', color=c)
-                
+
 
         # Restore Axes' limits.
         target.set_ylim(ylim)
@@ -3837,13 +3940,13 @@ class VirtSat(LogFile):
                        **kwargs):
         '''
         Create a 2D orbit plot in the given plane (e.g. 'XY' or 'ZY').
-        Extra kwargs are handed to the plot function. 
+        Extra kwargs are handed to the plot function.
 
 
         Parameters
         ==========
         None
-        
+
         Other Parameters
         ================
         plane : string
@@ -3853,7 +3956,7 @@ class VirtSat(LogFile):
         loc : 3-digit integer
            Set subplot location.  Defaults to 111.
         adjust_axes : bool
-           If True, axes will be customized to best display orbit (equal 
+           If True, axes will be customized to best display orbit (equal
            aspect ratio, grid on, planet drawn, etc.).  Defaults to True.
         style: string
            A matplotlib line style specifier.  Defaults to 'g.'.
@@ -3883,7 +3986,7 @@ class VirtSat(LogFile):
         # Set time range of plot.
         if not trange: trange = [self['time'].min(), self['time'].max()]
         tloc = (self['time']>=trange[0])&(self['time']<=trange[-1])
-        
+
         # Extract orbit X, Y, or Z.
         plane=plane.lower()
         if plane[0] in ['x','y','z']:
@@ -3903,7 +4006,7 @@ class VirtSat(LogFile):
             x_arr, y_arr = x[-1], y[-1]
             dx, dy = x[-1]-x[-2], y[-1] - y[-2]
             ax.arrow(x_arr, y_arr, dx, dy, **arrow_kwargs)
-        
+
         # Finish customizing axis.
         if adjust_axes:
             ax.axis('equal')

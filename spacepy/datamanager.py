@@ -11,7 +11,7 @@ Institution: University of New Hampshire
 
 Contact: Jonathan.Niehof@unh.edu
 
-Copyright 2015
+Copyright 2015-2020 contributors
 
 
 About datamanager
@@ -40,12 +40,14 @@ Examples go here
     axis_index
     flatten_idx
     insert_fill
+    rebin
     rev_index
     values_to_steps
 """
 
 __all__ = ["DataManager", "apply_index", "array_interleave", "axis_index",
-           "flatten_idx", "insert_fill", "rev_index", "values_to_steps"]
+           "flatten_idx", "insert_fill", "rebin", "rev_index",
+           "values_to_steps"]
 
 import datetime
 import operator
@@ -775,3 +777,349 @@ def rev_index(idx, axis=-1):
     idx_out = numpy.empty_like(idx).ravel()
     idx_out[flatten_idx(idx, axis)] = axis_index(idx.shape, axis).ravel()
     return idx_out.reshape(idx.shape)
+
+
+def _find_shape(bigshape, littleshape):
+    """Increase dimensionality of small array to match larger
+
+    Add degenerate dimensions to a lesser-dimensioned array to match a
+    larger-dimensioned array.
+
+    Parameters
+    ==========
+    bigshape : tuple
+        The shape of the larger-dimmed array
+    littleshape : tuple
+        The shape of the smaller-dimmed array
+
+    Returns
+    =======
+    tuple
+        A shape of the same length/dimensions of ``bigshape`` with
+        dimension sizes taken from ``littleshape`` or of size 1. Suitable
+        for calling :func:`numpy.reshape` on array of shape ``littleshape``.
+    """
+    newshape = []
+    littleidx = 0
+    for i, size in enumerate(bigshape):
+        if littleidx < len(littleshape): # Still have "little" to consume
+            if size == littleshape[littleidx]: # Match, just move along
+                newshape.append(size)
+                littleidx += 1
+                continue
+            if littleshape[littleidx] == 1: # Consume degenerate dim
+                littleidx += 1
+        newshape.append(1) # Add a degenerate dim
+    if littleidx < len(littleshape): # Didn't consume them all
+        raise ValueError('Unable to make shape {} compatible with shape {}'
+                         .format(littleshape, bigshape))
+    return tuple(newshape)
+
+
+def rebin(data, bindata, bins, axis=-1, bintype='mean',
+          weights=None, clip=False, bindatadelta=None):
+    """Rebin one axis of input data based on values of another array
+
+    This is clearest with an example. Consider a flux as a function of time,
+    energy, and the look direction of a detector (could be multiple detectors,
+    or spin sectors.) The flux is then 3-D, dimensioned Nt x Ne x Nl. Now
+    consider that each look direction has an associated pitch angle that is
+    a function of time and thus stored in an array Nt x Nl. Then this function
+    will redimension the flux into pitch angle bins (rather than tags.)
+
+    So consider the PA bins to have dimension Np + 1 (because it represents
+    the edges, the number of bins is one less than the dimension.) Then
+    the output will be dimensioned Nt x Ne x Np.
+
+    ``bindata`` must be same or lesser dimensionality than ``data``. Any
+    axes which are present must be either of size 1, or the same size as
+    ``data``. So for ``data`` 100x5x20, ``bindata`` may be 100x5x20, or
+    100, or 100x1x20, but not 100x20x5. This function will insert axes of
+    size 1 as needed to match dimensionality.
+
+    Parameters
+    ==========
+    data : :class:`~numpy.ndarray`
+        N-dimensional array of data to be rebinned. :class:`~numpy.nan`
+        are ignored.
+    bindata : :class:`~numpy.ndarray`
+        M-dimensional (M<=N) array of values to be compared to the bins.
+    bins : :class:`~numpy.ndarray`
+        1-D array of bin edges. Output dimension will be this size
+        minus 1. Any values in ``bindata`` that don't fall in the
+        bins will be omitted from the output. (See ``clip`` to change
+        this behavior).
+
+    Other Parameters
+    ================
+    axis : int
+        Axis of `data` to rebin. This axis will disappear in the
+        output and be replaced with an axis of the size of
+        ``bins`` less one. (Default -1, last axis)
+    bintype : str
+        Type of rebinning to perform:
+            mean
+                Return the mean of all values in the bin (default)
+            unc
+                Return the quadrature mean of all values in the bin,
+                for propagating uncertainty
+            count
+                Return the count of values that fall in each bin.
+    weights : :class:`~numpy.ndarray`
+        Relative weight of each sample in ``bindata``. Must be same
+        shape as ``bindata``. Purely relative, i.e. the output is
+        only affected based on the total of ``weights`` if ``bintype``
+        is ``count``. Note if ``weights`` is specified, ``count`` returns
+        the sum of the weights, not the count of individual samples.
+    clip : boolean
+        Clip data to the bins. If true, all input data will be assigned
+        a bin and data outside the range of the bin edges will be assigned
+        to the extreme bins. If false (default), input data outside the bin
+        ranges will be ignored.
+    bindatadelta : :class:`~numpy.ndarray`
+        By default, the ``bindata`` are treated as point values. If
+        ``bindatadelta`` is specified, it is treated as the half-width of
+        the ``bindata``, allowing a single input value to be split between
+        output bins. Must be scalar, or same shape as `bindata`. Note that
+        input values are not weighted by the bin width, but by number of
+        input values or by ``weights``. (Combining ``weights`` with
+        ``bindatadelta`` is not comprehensively tested.)
+
+    Returns
+    =======
+    :class:`~numpy.ndarray`
+        ``data`` with one axis redimensioned, from its original
+        dimension to the bin dimension.
+
+    Examples
+    ========
+    Consider a particle flux distribution that's a function of energy and
+    pitch angle. For simplicity, assume that the energy dependence is a
+    simple power law and the pitch angle dependence is Gaussian, with a peak
+    whose position oscillates in time over a period of about one hour. This is
+    fairly non-physical but illustrative.
+
+    First making the relevant imports::
+
+        >>> import matplotlib.pyplot
+        >>> import numpy
+        >>> import spacepy.datamanager
+        >>> import spacepy.plot
+
+    The functional form of the flux is then::
+
+        >>> def j(e, t, a):
+        ...     return e ** -2 * (1 / (90 * numpy.sqrt(2 * numpy.pi))) \\
+        ...     * numpy.exp(
+        ...         -0.5 * ((a - 90 + 90 * numpy.sin(t / 573.)) / 90.) ** 2)
+
+    Illustrating the flux at one energy as a function of pitch angle::
+
+        >>> times = numpy.arange(0., 7200, 5)
+        >>> alpha = numpy.arange(0, 181., 2)
+        # Add a dimension so the flux is a 2D array
+        >>> flux = j(1., numpy.expand_dims(times, 1),
+        ...          numpy.expand_dims(alpha, 0))
+        >>> spacepy.plot.simpleSpectrogram(times, alpha, flux, cb=False,
+        ...                                ylog=False)
+        >>> matplotlib.pyplot.ylabel('Pitch angle (deg)')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.title('Flux at 1 MeV')
+
+    .. plot:: pyplots/datamanager_rebin_1.py
+
+    Or the flux at one pitch angle as a function of energy::
+
+        >>> energies = numpy.logspace(0, 3, 50)
+        >>> flux = j(numpy.expand_dims(energies, 0),
+        ...          numpy.expand_dims(times, 1), 90.)
+        >>> spacepy.plot.simpleSpectrogram(times, energies, flux, cb=False)
+        >>> matplotlib.pyplot.ylabel('Energy (MeV)')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.title('Flux at 90 degrees')
+
+    .. plot:: pyplots/datamanager_rebin_2.py
+
+    The measurement is usually not aligned with a pitch angle grid, and
+    the detector pointing in pitch angle space usually varies with time.
+    Taking a very simple case of eight detectors that sweep through pitch
+    angle space in an organized fashion at ten degrees per minute, the
+    measured pitch angle as a function of detector and time is::
+
+        >>> def pa(d, t):
+        ...     return (d * 22.5 + t * (2 * (d % 2) - 1)) % 180
+        >>> lines = matplotlib.pyplot.plot(
+        ...     times, pa(numpy.arange(8).reshape(1, -1), times.reshape(-1, 1)),
+        ...     marker='o', ms=1, linestyle='')
+        >>> matplotlib.pyplot.legend(lines,
+        ...     ['Detector {}'.format(i) for i in range(4)], loc='best')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.ylabel('Pitch angle (deg)')
+        >>> matplotlib.pyplot.title('Measured pitch angle by detector')
+
+    .. plot:: pyplots/datamanager_rebin_3.py
+
+    Assuming a coarser measurement in time and energy than used to illustrate
+    the distribution above, the measured flux as a function of time, detector,
+    and energy is constructed::
+
+        >>> times = numpy.arange(0., 7200, 300) #5 min cadence
+        >>> alpha = pa(numpy.arange(8).reshape(1, -1), times.reshape(-1, 1))
+        >>> energies = numpy.logspace(0, 3, 10) #10 energy channels (3/decade)
+        # Every dimension (t, detector, e) gets its own numpy axis
+        >>> flux = j(numpy.reshape(energies, (1, 1, -1)),
+                     numpy.reshape(times, (-1, 1, 1)),
+                     numpy.expand_dims(alpha, -1))
+        >>> flux.shape
+        (24, 8, 10)
+
+    The flux at an energy as a function of detector is not very useful::
+
+        >>> spacepy.plot.simpleSpectrogram(times, numpy.arange(8),
+        ...                                flux[..., 0], cb=False, ylog=False)
+        >>> matplotlib.pyplot.ylabel('Detector')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.title('Flux at 1 MeV')
+
+    .. plot:: pyplots/datamanager_rebin_4.py
+
+    As a function of energy for one detector, the energy dependence is
+    apparent but time and pitch angle effects are confounded::
+
+        >>> spacepy.plot.simpleSpectrogram(times, energies, flux[:, 0, :],
+        ...                                cb=False)
+        >>> matplotlib.pyplot.ylabel('Energy (MeV)')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.title('Flux in detector 0')
+
+    .. plot:: pyplots/datamanager_rebin_5.py
+
+    What is needed is to recover the array of flux dimensioned by
+    time, pitch angle, and energy, with appropriate pitch angle bins.
+    The assumption is that the pitch angle as a function of time and
+    detector is measured and thus the ``alpha`` array is available.
+    Using that array, ``rebin`` can change flux from time, detector,
+    energy bins to time, pitch angle, energy bins. The axis 1 changes
+    from a detector dimension to pitch angle::
+
+        >>> pa_bins = numpy.arange(0, 181, 36)
+        >>> flux_by_pa = spacepy.datamanager.rebin(
+        ...     flux, alpha, pa_bins, axis=1)
+        >>> flux_by_pa.shape
+        (24, 6, 10)
+
+    This can then be visualized. The pitch angle coverage is not perfect,
+    but the original shape of the distribution is apparent, and further
+    analysis can be performed on the regular pitch angle grid::
+
+        >>> spacepy.plot.simpleSpectrogram(times, pa_bins, flux_by_pa[..., 0],
+        ...                                cb=False, ylog=False)
+        >>> matplotlib.pyplot.ylabel('Pitch angle (deg)')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.title('Flux at 1MeV')
+
+    .. plot:: pyplots/datamanager_rebin_6.py
+
+    Or by energy::
+
+        >>> spacepy.plot.simpleSpectrogram(times, energies, flux_by_pa[:, 2, :],
+        ...                                cb=False)
+        >>> matplotlib.pyplot.ylabel('Energy (MeV)')
+        >>> matplotlib.pyplot.xlabel('Time (sec)')
+        >>> matplotlib.pyplot.title('Flux at 90 degrees')
+
+    .. plot:: pyplots/datamanager_rebin_7.py    
+
+    ``rebin`` can be used for higher dimension data, if the pitch angle
+    itself depends on energy (e.g. if an energy sweep takes substantial
+    time), and to propagate uncertainties through the rebinning. It can
+    also be used to rebin on the time axis, e.g. for transforming time
+    base.
+    """
+    bintype = bintype.lower()
+    assert bintype in ('mean', 'count', 'unc')
+    data = numpy.require(data, dtype=numpy.floating)
+    bindata = numpy.require(bindata, dtype=numpy.floating)
+    if axis < 0:
+        axis = len(data.shape) + axis
+    binnedshape = _find_shape(data.shape, bindata.shape)
+    if weights is not None:
+        weights = numpy.require(weights, dtype=numpy.floating)
+        assert weights.shape == bindata.shape
+        weights = numpy.reshape(weights, binnedshape)
+    if bindatadelta is not None:
+        if not numpy.isscalar(bindatadelta):
+            bindatadelta = numpy.require(bindatadelta, dtype=numpy.floating)
+            assert bindata.shape == bindatadelta.shape
+            bindatadelta = numpy.reshape(bindatadelta, binnedshape)
+            bindatadelta = numpy.rollaxis(
+                bindatadelta, axis=axis, start=len(data.shape))
+    # Add axes to match shapes. Move the axis to rebin to the end of the line.
+    bindata = numpy.reshape(bindata, binnedshape)
+    indata = data # Holding a reference without transformations
+    data = numpy.rollaxis(data, axis=axis, start=len(data.shape))
+    bindata = numpy.rollaxis(bindata, axis=axis, start=len(data.shape))
+    nbins = len(bins) - 1
+    # Get an array, last two axes of which are a matrix of
+    # (newbin, oldbin) that is the fraction of oldbin (the input bin) that
+    # falls within newbin
+    # Special case if bindata is point: 1 where oldbin is in newbin, else 0
+    # This involves adding a newbin axis to the old bins, and an oldbin axis
+    # to the (end of) the bins
+    outbin_shape = (1,) * (len(data.shape) - 1) + (-1, 1)
+    if bindatadelta is None:
+        # What bin is every data point of the binned data in
+        whichbin = numpy.digitize(bindata, bins) - 1
+        if clip:
+            whichbin[whichbin < 0] = 0
+            whichbin[whichbin >= nbins] = (nbins - 1)
+        select = numpy.require(
+            numpy.expand_dims(whichbin, axis=-2)
+            == numpy.reshape(
+                numpy.arange(nbins, dtype=numpy.int), outbin_shape),
+            dtype=numpy.int)
+    else:
+        bindatamin = bindata - bindatadelta
+        bindatamax = bindata + bindatadelta
+        if clip:
+            bindatamin[bindatamin < bins[0]] = bins[0]
+            bindatamax[bindatamax > bins[-1]] = bins[-1]
+        # The edges of the output and input bins, on a common shape
+        # that ends with (outputbins, inputbins)
+        bindatamin = numpy.expand_dims(bindatamin, axis=-2)
+        bindatamax = numpy.expand_dims(bindatamax, axis=-2)
+        binmin = numpy.reshape(bins[:-1], outbin_shape)
+        binmax = numpy.reshape(bins[1:], outbin_shape)
+        # Overlap of input/output bins, if it exists,  ends when either does
+        overlap_top = numpy.minimum(bindatamax, binmax)
+        # And it start at the higher of the two
+        overlap_bottom = numpy.maximum(bindatamin, binmin)
+        # No overlap if top < bottom
+        overlap = numpy.maximum(overlap_top - overlap_bottom , 0)
+        # Normalize the overlap to fraction of the input bin
+        select = numpy.require(overlap, dtype=numpy.float) \
+                                               / (bindatamax - bindatamin)
+    if weights is not None: # Apply weights to the inputs
+        select = select * numpy.expand_dims(weights, axis=-2)
+    # Add a degenerate dimension to the end of data, so now
+    # the data end in dims (oldbin, newbin)
+    data = numpy.expand_dims(data, axis=-1)
+    idx = numpy.isnan(data)
+    counts = numpy.matmul(select, ~idx)[..., 0]
+    if bintype == 'count':
+        return numpy.rollaxis(counts, axis=-1, start=axis)
+    if bintype == 'unc': # Square what we're summing over
+        data = data ** 2
+        select = select ** 2
+    if numpy.may_share_memory(indata, data): # Don't overwrite input
+        data = data.copy()
+    data[idx] = 0
+    data_sum = numpy.matmul(select, data)[..., 0]
+    data_sum[counts == 0] = numpy.nan
+    counts[counts == 0] = 1 # Suppress error when nan/0
+    if bintype == 'unc':
+        data_sum = numpy.sqrt(data_sum)
+    avg = data_sum / counts
+    # Put the binned axis back in place
+    avg = numpy.rollaxis(avg, axis=-1, start=axis)
+    return avg

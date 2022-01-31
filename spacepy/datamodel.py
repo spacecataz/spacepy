@@ -175,8 +175,7 @@ except ImportError:
     import io as StringIO
 
 import numpy
-from . import toolbox
-from . import time as spt
+# from . import toolbox # handled in functions that use it
 
 
 __contact__ = 'Steve Morley, smorley@lanl.gov'
@@ -445,11 +444,7 @@ def dmfilled(shape, fillval=0, dtype=None, order='C', attrs=None):
         
     """
     a = dmarray(numpy.empty(shape, dtype, order), attrs=attrs)
-    try:
-        a.fill(fillval)
-    except TypeError:
-        obj = numpy.core.numeric._maketup(dtype, fillval)
-        a.fill(obj)
+    a.fill(fillval)
     return a
 
 
@@ -508,21 +503,12 @@ class SpaceData(dict, MetaMixin):
             del kwargs['attrs']
 
         super(SpaceData, self).__init__(*args, **kwargs)
-        self.toCDF = partial(toCDF, SDobject=self, *args, **kwargs)
+        self.toCDF = partial(toCDF, SDobject=self)
         self.toCDF.__doc__ = toCDF.__doc__
-        self.toHDF5 = partial(toHDF5, SDobject=self, *args, **kwargs)
+        self.toHDF5 = partial(toHDF5, SDobject=self)
         self.toHDF5.__doc__ = toHDF5.__doc__
-        self.toJSONheadedASCII = partial(toJSONheadedASCII, insd=self, *args, **kwargs)
+        self.toJSONheadedASCII = partial(toJSONheadedASCII, insd=self)
         self.toJSONheadedASCII.__doc__ = toJSONheadedASCII.__doc__
-
-    #Need to remove the partials on copy, http://bugs.python.org/issue4380
-    #They will be recreated by __init__
-    def __getstate__(self):
-        d = copy.copy(self.__dict__)
-        if 'toCDF' in d: del d['toCDF']
-        if 'toHDF5' in d: del d['toHDF5']
-        if 'toJSONheadedASCII' in d: del d['toJSONheadedASCII']
-        return d
 
 ## To enable string output of repr, instead of just printing, uncomment his block
 #    def __repr__(self):
@@ -570,6 +556,7 @@ class SpaceData(dict, MetaMixin):
         --------
         toolbox.dictree
         '''
+        from . import toolbox
         toolbox.dictree(self, **kwargs)
 
     def flatten(self):
@@ -1080,7 +1067,7 @@ def toHDF5(fname, SDobject, **kwargs):
                     try:
                         if value.nbytes: truth = True #empty arrays of any dimension are nbytes=0
                     except AttributeError: #not an array
-                        if value or value is 0: truth = True
+                        if value or value == 0: truth = True
 
                     if truth:
                         if bytes is str:
@@ -1505,13 +1492,8 @@ def readJSONheadedASCII(fname, mdata=None, comment='#', convert=False, restrict=
             except ValueError:
                 warnings.warn('Key {0} for conversion not found in file'.format(conkey), UserWarning)
                 continue
-            #https://github.com/numpy/numpy/issues/2160
-            if len(mdata[name].shape) == 1:
-                for i,element in numpy.ndenumerate(mdata[name]):
-                    mdata[name][i[0]] = conversions[name](element)
-            else:
-                for i,element in numpy.ndenumerate(mdata[name]):
-                    mdata[name][i] = conversions[name](element)
+            for i,element in numpy.ndenumerate(mdata[name]):
+                mdata[name][i] = conversions[name](element)
 
     for remkey in keys:
         try:
@@ -1666,7 +1648,7 @@ def _dateToISO(indict):
         if isinstance(indict, datetime.datetime):
             retdict = retdict.isoformat()
         elif hasattr(indict, '__iter__'):
-            retdict = numpy.asanyarray(indict)
+            retdict = numpy.asanyarray(retdict)
             for idx, el in numpy.ndenumerate(indict):
                 if isinstance(el, datetime.datetime):
                     retdict[idx] = el.isoformat()
@@ -1848,8 +1830,44 @@ def dmcopy(dobj):
     else:
         return copy.copy(dobj)
 
-def createISTPattrs(datatype, ndims=1, vartype=None, units=None, NRV=False):
+def createISTPattrs(datatype, ndims=1, vartype=None, units=' ', NRV=False):
     '''Return set of unpopulated attributes for ISTP compliant variable
+
+    Parameters
+    ----------
+    datatype : {'data', 'support_data', 'metadata'}
+        datatype of variable to create metadata for.
+    ndims : int
+        number of dimensions, default=1
+    vartype : {'float', 'char', 'int', 'epoch', 'tt2000'}
+        The type of the variable, default=float
+    units : str
+        The units of the variable, default=' '
+    NRV : bool
+        Is the variable NRV (non-record varying), default=False
+
+    Returns
+    -------
+    attrs : dict
+        dictionary of attributes for the variable
+
+    Examples
+    --------
+    >>> import spacepy.datamodel as dm
+    >>> dm.createISTPattrs('data', ndims=2, vartype='float', units='MeV')
+    {'CATDESC': '',
+     'DISPLAY_TYPE': 'spectrogram',
+     'FIELDNAM': '',
+     'FILLVAL': -1e+31,
+     'FORMAT': 'F18.6',
+     'LABLAXIS': '',
+     'SI_CONVERSION': ' > ',
+     'UNITS': 'MeV',
+     'VALIDMIN': '',
+     'VALIDMAX': '',
+     'VAR_TYPE': 'data',
+     'DEPEND_0': 'Epoch',
+     'DEPEND_1': ''}
     '''
     fillvals = {'float': -1e31,
                 'char': '',
@@ -1871,10 +1889,9 @@ def createISTPattrs(datatype, ndims=1, vartype=None, units=None, NRV=False):
     else:
         fill = fillvals[vartype]
         form = formats[vartype]
-    if units:
-        unit = units
-    else:
-        unit = ''
+
+    unit = units
+
     if datatype == 'data':
         attrs = {'CATDESC': '',
             'DISPLAY_TYPE': disp[ndims],
@@ -1921,6 +1938,8 @@ def createISTPattrs(datatype, ndims=1, vartype=None, units=None, NRV=False):
             attrs['DEPEND_0'] = 'Epoch'
         else:
             del attrs['DEPEND_0']
+    else:
+        raise ValueError("Invalid datatype (data|support_data|metadata)")
 
     return attrs
 
@@ -1997,6 +2016,7 @@ def resample(data, time=[], winsize=0, overlap=0, st_time=None, outtimename='Epo
     #    - the output variables have their DEPEND_0 changed to Epoch (or outtimename)
     #    - each dimension of a 2d array is resampled individually 
     """
+    from . import toolbox
     # check for SpaceData or dmarray input before going to a bunch of work
     if not isinstance(data, (SpaceData, dmarray)):
         raise(TypeError('Input must be a SpaceData or dmarray object'))
@@ -2009,9 +2029,9 @@ def resample(data, time=[], winsize=0, overlap=0, st_time=None, outtimename='Epo
     keys = [k for k in data if len(data[k]) == lent]
     d2 = data[keys]
     # what time are we starting at?
-    if isinstance(time, spt.Ticktock):
+    try:
         t_int = time.UTC
-    else:
+    except AttributeError:
         t_int = dmarray(time)
     if t_int.any() and ((st_time is None) and isinstance(t_int[0], datetime.datetime)):
         st_time = t_int[0].replace(hour=0, minute=0, second=0, microsecond=0)

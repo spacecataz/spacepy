@@ -54,83 +54,95 @@ principles:
     table below. The commit message must include the reason for the
     dependency requirement.
 
+Regardless of minimum requirements, using the latest stable version of
+a package is generally preferred. The minimum supported version for
+SpacePy may not be recommended for other reasons (e.g. bug fixes or
+improved features elsewhere in the package.)
+
 This table summarizes the versions to be supported according to the
 above policy, as well as the minimum version currently supported by
 SpacePy. Where available, the dependency name links to its version
 history. The oldest version supported according to this policy is in
 **bold**.
 
-.. list-table:: SpacePy dependency versions (2020/1/9)
+.. list-table:: SpacePy dependency versions (2021/9/16)
    :widths: 10 10 10 10 10 10 10
    :header-rows: 1
 
    * - Dependency
      - Current Release
-     - Ubuntu 16.04LTS
      - Ubuntu 18.04LTS
+     - Ubuntu 20.04LTS
      - NEP 29 (42/24 mo.)
      - NEP 29 (2/3 minor versions)
      - SpacePy current minimum
    * - `CPython <https://www.python.org/downloads/>`_
-     - 3.8.1 (2019/12/18)
-     - **3.5.1** (2015/12/7)
-     - 3.6.5 (2018/2/5)
-     - 3.6.0 (2016/12/23)
+     - 3.9.7 (2021/8/30)
+     - **3.6.5** (2018/2/5)
+     - 3.8.2 (2020/2/24) 
      - 3.7.0 (2018/6/27)
+     - 3.8.0 (2019/10/14)
      - 3.2.0 (2011/2/20) or 2.7.0 (2010/7/3)
+   * - `AstroPy <https://docs.astropy.org/en/stable/changelog.html#changelog>`_
+     - 4.3.1 (2021/8/11)
+     - **2.0.4** (2018/2/6)
+     - 4.0 (2019/2/16)
+     - 3.2 (2019/6/14)
+     - 4.1 (2020/10/21)
+     - 1.0 (2015/2/18)
    * - `CDF <https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest-release/unix/CHANGES.txt>`_
-     - 3.7.1 (2018/8/21)
+     - 3.8.0.1 (2020/7/7)
      - N/A
      - N/A
-     - 3.7.0 (2018/5/11)
-     - **3.5.0** (2013/9/15)
+     - 3.8.0 (2019/10/27)
+     - **3.6.0** (2015/2/5)
      - 2.7.0 (1999/9/27)
    * - `dateutil <https://github.com/dateutil/dateutil/releases>`_
-     - 2.8.1 (2019/11/3)
-     - **2.4.2** (2015/3/31)
+     - 2.8.2 (2021/7/8)
      - 2.6.1 (2017/7/10)
-     - 2.7.0 (2018/3/11)
-     - 2.6.0 (2016/11/8)
-     - minimum not established
+     - 2.7.3 (2018/5/9)
+     - 2.8.0 (2019/2/5)
+     - **2.6.0** (2016/11/8)
+     - tested from 1.4 (2008/2/27)
    * - `ffnet <https://github.com/mrkwjc/ffnet/releases>`_
      - 0.8.4 (2018/10/28)
      - N/A
      - N/A
      - 0.8.4 (2018/10/28)
      - **0.6.0** (2007/3/22)
-     - minimum not established (tested from 0.7.0)
+     - tested from 0.7 (2011/8/8)
    * - `h5py <https://github.com/h5py/h5py/releases>`_
+     - 3.4.0 (2021/8/3)
+     - **2.7.1** (2017/9/1)
      - 2.10.0 (2019/9/6)
-     - **2.6.0** (2017/3/18)
-     - 2.7.1 (2017/9/1)
-     - 2.8.0 (2018/5/13)
-     - 2.8.0 (2018/5/13)
-     - minimum not established
+     - 3.0.0 (2020/10/30)
+     - 3.2.0 (2021/3/3)
+     - tested from 2.6 (2017/3/18)
    * - `matplotlib <https://github.com/matplotlib/matplotlib/releases>`_
+     - 3.4.3 (2021/8/12)
+     - **2.1.1** (2017/12/9)
      - 3.1.2 (2019/12/4)
-     - **1.5.1** (2016/1/10)
-     - 2.1.1 (2017/12/9)
-     - 2.1.0 (2017/10/7)
-     - 3.0.0 (2018/9/17)
+     - 3.2.0 (2020/3/3)
+     - 3.2.0 (2020/3/3)
      - 1.5.0 (2015/10/29)
    * - `networkx <https://github.com/networkx/networkx/releases>`_
-     - 2.4.0 (2019/10/16)
-     - 1.11 (2016/1/30)
+     - 2.6.3 (2021/9/9)
      - **1.11** (2016/1/30)
-     - 2.1 (2018/1/22)
-     - 2.1 (2018/1/22)
-     - minimum not established
+     - 2.4 (2019/10/16)
+     - 2.4 (2019/10/16)
+     - 2.4 (2019/10/16)
+     - tested from 1.0 (2010/1/7)
    * - `numpy <https://github.com/numpy/numpy/releases>`_
-     - 1.18.1 (2020/1/6)
-     - **1.11.0** (2016/3/27)
-     - 1.13.1 (2017/7/6)
-     - 1.14.0 (2018/1/6)
-     - 1.16.0 (2019/1/13)
-     - 1.4.0 (2009/12/27)
+     - 1.21.2 (2021/8/15)
+     - **1.13.3** (2017/7/6)
+     - 1.16.5 (2019/8/27)
+     - 1.18.0 (2019/12/22)
+     - 1.19.0 (2020/1/20)
+     - 1.10.0 (2015/10/5)
    * - `scipy <https://github.com/scipy/scipy/releases>`_
-     - 1.4.1 (2019/12/18)
-     - **0.17.0** (2016/1/23)
-     - 0.19.1 (2017/6/23)
-     - 1.2.0 (2018/12/17)
-     - 1.1.0 (2018/5/5)
-     - 0.10.0 (2011/11/13)
+     - 1.7.1 (2021/8/1)
+     - **0.19.1** (2017/6/23)
+     - 1.3.3 (2019/11/23)
+     - 1.4.0 (2019/12/16)
+     - 1.5.0 (2020/6/21)
+     - 0.11.0 (2012/9/24)

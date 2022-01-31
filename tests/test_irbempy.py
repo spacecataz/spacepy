@@ -7,6 +7,7 @@ Copyright 2010-2012 Los Alamos National Security, LLC.
 """
 
 import unittest
+import spacepy_testing
 import spacepy
 import spacepy.omni
 import spacepy.time
@@ -74,12 +75,20 @@ class IRBEMBigTests(unittest.TestCase):
              [  0.00000000e+00,   0.00000000e+00],
              [  0.00000000e+00,   0.00000000e+00],
              [  0.00000000e+00,   0.00000000e+00]])
-                            
+
         actual = ib.prep_irbem(self.ticks, self.loci, omnivals=self.omnivals)
         for key in expected:
             numpy.testing.assert_almost_equal(expected[key],
                                               actual[key],
-                                              decimal=5)        
+                                              decimal=5)
+
+    def test_prep_irbem_too_many_PA(self):
+        """Call prep_irbem with too many pitch angles"""
+        with self.assertRaises(ValueError) as cm:
+            ib.prep_irbem(self.ticks, self.loci, numpy.arange(5, 180, 5),
+                          omnivals=self.omnivals)
+        self.assertEqual('Too many pitch angles requested; 25 is maximum.',
+                         str(cm.exception))
 
     def test_find_Bmirror(self):
         expected = {'Blocal': array([ 1031.008992,  3451.98937]),
@@ -94,9 +103,9 @@ class IRBEMBigTests(unittest.TestCase):
         actual = ib.find_magequator(self.ticks, self.loci, omnivals=self.omnivals)
         numpy.testing.assert_almost_equal(expected['Bmin'], actual['Bmin'], decimal=6)
         numpy.testing.assert_almost_equal(Bmin_loci, actual['loci'].data, decimal=6)
-            
+
     def test_get_Bfield(self):
-        """test get_Bfield"""	
+        """test get_Bfield"""
         expected = {'Blocal': array([ 1031.00899,  3451.98937]),
         'Bvec': array([[    3.49178,  -172.79037 ,  1016.4206],
                        [  335.0928,  -553.03591,  3390.88406]])}
@@ -107,20 +116,20 @@ class IRBEMBigTests(unittest.TestCase):
     def test_get_Lstar_T01(self):
         # test T01STORM
         expected = {'Xj': array([[ 0.000403], [ 0.00269002]]),
-            'Lstar': array([[ 3.025887], [ 2.0523954]]), 
+            'Lstar': array([[ 3.025887], [ 2.054195]]),
             'Bmirr': array([[ 1031.008992], [ 3451.98937]]),
             'Lm': array([[ 3.079151], [ 2.059326]]),
             'Bmin': array([ 1030.456337,  3444.077016 ]),
-            'MLT': array([ 11.97159175,  12.13313906])}    
+            'MLT': array([ 11.97159175,  12.13313906])}
         actual = ib.get_Lstar(self.ticks, self.loci, [90], omnivals=self.omnivals)
         for key in expected.keys():
             numpy.testing.assert_almost_equal(expected[key], actual[key], decimal=6)
-    
+
     def test_get_Lstar_T05(self):
         # test T05
         expected = {'Xj': array([[ 0.266114], [ 0.186008]]),
                     'Lstar': array([[ 3.015461], [ 2.043043]]),
-                    'Bmirr': array([[ 1150.670441], [ 3895.810805]]), 
+                    'Bmirr': array([[ 1150.670441], [ 3895.810805]]),
                     'Lm': array([[ 3.087026], [ 2.059734]]),
                     'Bmin': array([ 1015.468031,  3432.146907]),
                     'MLT': array([ 11.97159175,  12.13313906])}
@@ -128,11 +137,77 @@ class IRBEMBigTests(unittest.TestCase):
         for key in expected:
             numpy.testing.assert_almost_equal(expected[key], actual[key], decimal=6)
 
+    def test_get_Lstar_OPQuiet(self):
+        # test OP-Quiet
+        expected = {'Xj': array([[ 0.001051], [ 0.002722]]),
+            'Lstar': array([[ 3.029621], [ 2.059631]]),
+            'Blocal': array([ 1019.052401, 3467.52999]),
+            'Lm': array([[ 3.091352], [ 2.056261]]),
+            'Bmin': array([ 1018.669701,  3459.500966 ]),
+            'MLT': array([ 11.97159175,  12.13313906])}
+        actual = ib.get_Lstar(self.ticks, self.loci, [90], extMag="OPQUIET", omnivals=self.omnivals)
+        for key in expected.keys():
+            numpy.testing.assert_almost_equal(expected[key], actual[key], decimal=6)
+
+    def test_get_Lstar_OPQuiet_multi(self):
+        """Test Lstar on OPQ forcing multiprocess"""
+        cpu_actual = spacepy.config['ncpus']
+        # To trigger a worker pool, number of calcs must be
+        # more than double number of cpus
+        spacepy.config['ncpus'] = 4
+        try:
+            ticks = spacepy.time.tickrange(self.ticks.ISO[0], self.ticks.ISO[-1], 1/1440.)
+            ncalc = len(ticks)  # Forced 10 times in test data range
+            loci = spacepy.coordinates.Coords([[nc-4, 6-nc, 0] for nc in range(ncalc)], 'GEO', 'car')
+            omnivals = spacepy.omni.get_omni(ticks, dbase='Test')
+            expected = {'Lstar': array([[6.84698], [5.58814], [4.35608],
+                                        [3.13613], [1.97344], [1.41439],
+                                        [2.05375], [3.19979], [4.35920],
+                                        [5.38242]]),
+                        'Lm': array([[7.61427481], [6.13826804], [4.65907084],
+                                     [3.21519241], [1.97225109], [1.41105356],
+                                     [2.05626165], [3.28414042], [4.6531115 ],
+                                     [5.92800457]])
+                        }
+            # OPQ won't use the OMNI, but if they're passed in
+            # the code still processes them, so answers should be identical
+            actuali= ib.get_Lstar(ticks, loci, [90], extMag="OPQUIET", omnivals=omnivals)
+            actualn = ib.get_Lstar(ticks, loci, [90], extMag="OPQUIET", omnivals=None)
+        finally:
+            spacepy.config['ncpus'] = cpu_actual
+        # Check that results are as expected
+        numpy.testing.assert_almost_equal(expected['Lstar'], actuali['Lstar'], decimal=5)
+        numpy.testing.assert_almost_equal(expected['Lm'], actuali['Lm'], decimal=5)
+        numpy.testing.assert_almost_equal(expected['Lstar'], actualn['Lstar'], decimal=5)
+        numpy.testing.assert_almost_equal(expected['Lm'], actualn['Lm'], decimal=5)
+
+    def test_get_Lstar_TooManyPA(self):
+        """test OP-Quiet with too many pitch angles"""
+        with self.assertRaises(ValueError) as cm:
+            ib.get_Lstar(
+                self.ticks, self.loci, numpy.arange(5, 180, 5),
+                extMag="OPQUIET", omnivals=self.omnivals)
+        self.assertEqual('Too many pitch angles requested; 25 is maximum.',
+                         str(cm.exception))
+
+    def test_get_Lstar_OPQuiet_landi2lstar(self):
+        # test OP-Quiet with LandI2Lstar routine
+        expected = {'Xj': array([[ 0.001051], [ 0.002722]]),
+            'Lstar': array([[3.02419 ], [2.053277]]),
+            'Blocal': array([ 1019.052401,  3467.52999]),
+            'Lm': array([[ 3.091352], [ 2.056261]]),
+            'Bmin': array([ 1018.669701,  3459.500966 ]),
+            'MLT': array([ 11.97159175,  12.13313906])}
+        actual = ib.get_Lstar(self.ticks, self.loci, [90], extMag="OPQUIET", omnivals=self.omnivals,
+                              landi2lstar=True)
+        for key in expected.keys():
+            numpy.testing.assert_almost_equal(expected[key], actual[key], decimal=6)
+
     def test_AlphaOfK(self):
         '''test calculation of eq. pitch angle from K (regression)'''
-        t = spacepy.time.Ticktock(['2001-09-01T04:00:00'], 'ISO') 
-        loci = spacepy.coordinates.Coords([-4,0,0], 'GSM', 'car') 
-        ans = spacepy.irbempy.AlphaOfK(t, loci, 0.11, extMag='T89', omnivals=self.omnivals) 
+        t = spacepy.time.Ticktock(['2001-09-01T04:00:00'], 'ISO')
+        loci = spacepy.coordinates.Coords([-4,0,0], 'GSM', 'car')
+        ans = spacepy.irbempy.AlphaOfK(t, loci, 0.11, extMag='T89', omnivals=self.omnivals)
         numpy.testing.assert_almost_equal(ans, 50.625, decimal=5)
 
     def test_find_footpoint(self):
@@ -159,14 +234,28 @@ class IRBEMTestsWithoutOMNI(unittest.TestCase):
         self.assertEqual(expected, ib.get_dtype(sysaxes))
 
     def test_get_sysaxes(self):
+        """Test that expected value is returned for sysaxes query"""
         dtype = 'GSE'
-        carsph = 'car'
-        expected = 3
-        self.assertEqual(expected, ib.get_sysaxes(dtype, carsph))
-        
+        self.assertEqual(3, ib.get_sysaxes(dtype, 'car'))
+        self.assertEqual(None, ib.get_sysaxes(dtype, 'sph'))
+
+    def test_prep_irbem_sysaxesnone(self):
+        """prep_irbem should handle 'car' and 'sph' version of systems identically"""
+        locc = spacepy.coordinates.Coords([[3,0,0],[2,0,0]], 'GSM', 'car')
+        out1 = ib.prep_irbem(ticks=self.ticks, loci=locc,
+                             extMag='0', options=[1, 0, 0, 0, 1])
+        pos = ib.car2sph(locc.data)
+        locs = spacepy.coordinates.Coords(pos, 'GSM', 'sph')
+        out2 = ib.prep_irbem(ticks=self.ticks, loci=locs,
+                             extMag='0', options=[1, 0, 0, 0, 1])
+        self.assertEqual(out1['sysaxes'], out2['sysaxes'])
+        numpy.testing.assert_almost_equal(out1['xin1'], out2['xin1'])
+        numpy.testing.assert_almost_equal(out1['xin2'], out2['xin2'])
+        numpy.testing.assert_almost_equal(out1['xin3'], out2['xin3'])
+
     def test_sph2car(self):
         loc = [1,45,45]
-        expected = array([ 0.5,  0.5,  0.70710678])	
+        expected = array([ 0.5,  0.5,  0.70710678])
         numpy.testing.assert_almost_equal(expected, ib.sph2car(loc))
 
     def test_car2sph(self):
@@ -179,6 +268,14 @@ class IRBEMTestsWithoutOMNI(unittest.TestCase):
         expected = array([[ 2.86714166, -0.02178308,  0.88262348],
             [ 1.91462214,  0.06992421,  0.57387514]])
         numpy.testing.assert_almost_equal(expected, ib.coord_trans(self.loci, 'GSM', 'car'))
+
+    def test_GSM_SM_init(self):
+        '''test for initialization error in gsm to sm conversion'''
+        cc_got = ib.oplib.coord_trans1(2, 4, 2002, 33, 43200, np.asarray([1., 2., 4.]))
+        expected = np.array([1.9286, 2., 3.6442])
+        # NaN will result if init not done in IRBEM, assert_almost_equal will
+        # compare NaNs without complaint
+        numpy.testing.assert_almost_equal(expected, cc_got, decimal=3)
 
     def test_get_AEP8(self):
         """test get_AEP8"""

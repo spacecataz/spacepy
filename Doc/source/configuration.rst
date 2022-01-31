@@ -9,6 +9,12 @@ change between SpacePy releases, so we do not recommend changing the
 configuration file without substantial reason.
 
 ``spacepy.rc`` lives in the per-user SpacePy directory, called ``.spacepy``.
+You can find this directory by::
+
+   >>> import spacepy
+   >>> spacepy.DOT_FLN
+   '/home/username/.spacepy'
+
 On Unix-like operating systems, it is in a user's home directory; on Windows, 
 in the user's Documents and Settings folder. If it doesn't exist, this directory
 (and ``spacepy.rc``) is automatically created when SpacePy is imported.
@@ -23,21 +29,32 @@ contains a single section, ``[spacepy]``.
 The spacepy directory
 =====================
 
-When first imported, spacepy will create a ``.spacepy`` directory in
-your ``$HOME`` folder. If you prefer a different location for this
+If you prefer a different location for the SpacePy
 directory, set the environment variable ``$SPACEPY`` to a location of
 your choice. For example, with a ``csh``, or ``tcsh`` you would::
 
 	setenv SPACEPY /a/different/dir
 
-for the ``bash`` shell you would:
+for the ``bash`` shell you would::
 
 	export SPACEPY=/a/different/dir
 
+If ``$SPACEPY`` is not an absolute path, it is treated as relative to
+the working directory at the time of import. In particular, that means
+if it is defined as an empty string (rather than an undefined
+variable), ``.spacepy`` is made directly in the current
+directory. Home directory references (``~``) are expanded via
+:func:`~os.path.expanduser`.
+
 If you change the default location, make sure you add the environment
 variable ``$SPACEPY`` to your ``.cshrc, .tcshrc,`` or ``.bashrc``
-script.
+script. If this directory does not exist, it will be created.
 
+The actual ``.spacepy`` directory is made inside the directory
+specified by ``$SPACEPY``.
+
+This directory contains the configuration file and also SpacePy-related
+data, which can be updated with :func:`~spacepy.toolbox.update`.
 
 Available configuration options
 ===============================
@@ -48,6 +65,20 @@ enable_deprecation_warning
   deprecated function is called. Set this option to False to retain the default
   Python behavior. (See :py:mod:`warnings` module for details on custom warning
   filters.)
+
+enable_old_data_warning
+  SpacePy maintains certain databases from external sources, notably the
+  leapsecond database used by :py:mod:`~spacepy.time`. By default
+  :py:exc:`~exceptions.UserWarning` is issued if the leap second database
+  is out of date. Set this option to False to suppress this warning (and
+  warnings about out-of-date data which may be added in the future.)
+
+keepalive
+  True to attempt to use HTTP keepalives when downloading data in
+  :py:func:`~spacepy.toolbox.update` (default). This is faster when
+  downloading many small files but may be fragile (e.g. if a proxy
+  server is required). Set to False for a more robust and flexible,
+  but slower, codepath.
 
 leapsec_url
   URL of the leapsecond database used by time conversions.
@@ -70,9 +101,15 @@ omni2_url
   The default should almost always be acceptable.
 
 qindenton_url
-  URL containing Qin-Denton packaging of OMNI data.
+  URL containing Qin-Denton packaging of OMNI data as as single file.
   :py:func:`~spacepy.toolbox.update` will download from the URL.
   The default should almost always be acceptable.
+
+qd_daily_url
+  URL containing Qin-Denton packaging of OMNI data in daily files,
+  supplemental to ``qindenton_url``. :py:func:`~spacepy.toolbox.update`
+  will download from the URL. The default should almost always be
+  acceptable.
 
 psddata_url
   URL containing PSD data.

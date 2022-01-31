@@ -9,11 +9,14 @@ Copyright 2010-2012 Los Alamos National Security, LLC.
 
 from __future__ import division
 
+import copy
 import datetime
+import marshal
 import os
 import os.path
 import tempfile
 import unittest
+
 try:
     import StringIO
 except ImportError:
@@ -21,9 +24,9 @@ except ImportError:
 import sys
 import warnings
 
+import spacepy_testing
 import spacepy.datamodel as dm
 import spacepy.time as spt
-from spacepy import pycdf
 import numpy as np
 
 try:
@@ -92,6 +95,12 @@ class SpaceDataTests(unittest.TestCase):
         self.assertEqual(sorted(b.keys()),
                          sorted(['1<--pig<--fish<--a', '4<--cat', '1<--dog', '1<--pig<--fish<--b', '5']))
 
+    def test_flatten_function_TypeError(self):
+        """flatten, check the try:except: at the top"""
+        # interesting behavior on what is created
+        self.assertEqual(dm.flatten(np.arange(5)),
+                         {0: 0, 1: 1, 2: 2, 3: 3, 4: 4})
+
     def test_unflatten_function(self):
         """Unflatten should unflatten a flattened SpaceData"""
         a = dm.SpaceData()
@@ -109,6 +118,21 @@ class SpaceDataTests(unittest.TestCase):
         self.assertEqual(sorted(a['1'].keys()), sorted(c['1'].keys()))
         self.assertEqual(sorted(a['1']['pig'].keys()), sorted(c['1']['pig'].keys()))
         self.assertEqual(sorted(a['1']['pig']['fish'].keys()), sorted(c['1']['pig']['fish'].keys()))
+
+    def test_unflatten_function_TypeError(self):
+        """unflatten, check the try:except: at the top"""
+        # interesting behavior on what is created
+        self.assertEqual(dm.unflatten(np.arange(5)),
+                         {0: 0, 1: 1, 2: 2, 3: 3, 4: 4})
+
+    def test_unflatten_function_nonflat(self):
+        """unflatten will error for a nested input"""
+        a = dm.SpaceData()
+        a['1'] = dm.SpaceData(dog=5, pig=dm.SpaceData(fish=dm.SpaceData(a='carp', b='perch')))
+        a['4'] = dm.SpaceData(cat='kitty')
+        a['5'] = 4
+        with self.assertRaises(TypeError):
+            dm.unflatten(a)
 
     def test_flatten_method(self):
         """Flatten should flatted a nested dict"""
@@ -310,7 +334,26 @@ class SpaceDataTests(unittest.TestCase):
         # Known failure, cannot delete property from instance.
 #        self.assertFalse('meta' in dir(a))
 
-        
+    def test_pickle(self):
+        """Make sure that SpaceData objects behave with pickle"""
+        a = dm.SpaceData({'a': [1, 2, 3]})
+        a.attrs['FILLVAL'] = 123
+        p_str = pickle.dumps(a)
+        ret = pickle.loads(p_str)
+        assert a == ret
+        assert a.attrs == ret.attrs
+
+    @unittest.expectedFailure
+    def test_marshal(self):
+        """SpaceData objects don't marshal, note that here"""
+        a = dm.SpaceData({'a': [1, 2, 3]})
+        a.attrs['FILLVAL'] = 123
+        p_str = marshal.dumps(a)
+        ret = marshal.loads(p_str)
+        assert a == ret
+        assert a.attrs == ret.attrs
+
+
 class dmarrayTests(unittest.TestCase):
     def setUp(self):
         super(dmarrayTests, self).setUp()
@@ -510,6 +553,15 @@ class dmarrayTests(unittest.TestCase):
         np.testing.assert_equal(tst, ans)
         self.assertEqual(tst.dtype, ans.dtype)
 
+    def test_dmfilled_recarray(self):
+        """dmfilled should fill a recarray"""
+        dt = [('foo', 'f4'), ('bar', 'i2')]
+        tst = dm.dmfilled(4, fillval=3, dtype=dt)
+        a = np.empty((4, ), dt)
+        a.fill(3)
+        ans = dm.dmarray(a)
+        np.testing.assert_equal(tst, ans)
+
     def test_toRecArray_contents(self):
         '''a record array can be created from a SpaceData, keys and values equal'''
         sd = dm.SpaceData()
@@ -590,6 +642,21 @@ class converterTests(unittest.TestCase):
         dm.toHDF5(self.testfile, a, mode='a')
         newobj = dm.fromHDF5(self.testfile)
         self.assertEqual(a.attrs['foo'], newobj.attrs['foo'])
+
+    def test_toHDF5_method(self):
+        """Convert to HDF5, using the method, catching #404"""
+        a = dm.SpaceData({'dat': dm.dmarray([1, 2, 3])})
+        a.toHDF5(self.testfile, mode='a')
+        newobj = dm.fromHDF5(self.testfile)
+        np.testing.assert_array_equal([1, 2, 3], newobj['dat'])
+
+    def test_copy_toHDF(self):
+        """Removed code in #404 for an old python bug, issue4380, make sure it works"""
+        a = dm.SpaceData({'dat': dm.dmarray([1, 2, 3])})
+        a2 = copy.deepcopy(a)
+        a2.toHDF5(self.testfile, mode='a')
+        newobj = dm.fromHDF5(self.testfile)
+        np.testing.assert_array_equal([1, 2, 3], newobj['dat'])
 
     def test_HDF5roundtrip(self):
         """Data can go to hdf and back"""
@@ -704,17 +771,29 @@ class converterTestsCDF(unittest.TestCase):
         tst = dm.fromCDF(self.testfile)
         for k in self.SDobj:
             np.testing.assert_array_equal(self.SDobj[k], tst[k])
-                    
+
+    def test_toCDF_method(self):
+        """Convert to CDF, using the method, catching #404"""
+        a = dm.SpaceData({'dat': dm.dmarray([1, 2, 3])})
+        a.toCDF(self.testfile, mode='a')
+        newobj = dm.fromCDF(self.testfile)
+        np.testing.assert_array_equal([1, 2, 3], newobj['dat'])
 
 class JSONTests(unittest.TestCase):
     def setUp(self):
         super(JSONTests, self).setUp()
-        self.pth = os.path.dirname(os.path.abspath(__file__))
-        self.filename = os.path.join(self.pth, 'data', '20130218_rbspa_MagEphem.txt')
-        self.filename_bad = os.path.join(self.pth, 'data', '20130218_rbspa_MagEphem_bad.txt')
+        self.filename = os.path.join(
+            spacepy_testing.datadir, '20130218_rbspa_MagEphem.txt')
+        self.filename_bad = os.path.join(
+            spacepy_testing.datadir, '20130218_rbspa_MagEphem_bad.txt')
+        self.testdir = tempfile.mkdtemp()
+        self.testfile = os.path.join(self.testdir, 'test.cdf')
 
     def tearDown(self):
         super(JSONTests, self).tearDown()
+        if os.path.exists(self.testfile):
+            os.remove(self.testfile)
+        os.rmdir(self.testdir)
 
     def test_readJSONMetadata(self):
         """readJSONMetadata should read in the file"""
@@ -868,6 +947,13 @@ class JSONTests(unittest.TestCase):
         self.assertTrue(dat2['Var2'].attrs['DIMENSION']==[2])
         os.remove(t_file.name)
 
+    def test_toJSONheadedASCII_method_404(self):
+        """Convert to toJSONheadedASCII, using the method, catching #404"""
+        a = dm.SpaceData({'dat': dm.dmarray([1, 2, 3])})
+        a.toJSONheadedASCII(self.testfile, mode='a')
+        newobj = dm.readJSONheadedASCII(self.testfile)
+        np.testing.assert_array_equal([1, 2, 3], newobj['dat'])
+
     def test_toJSONmetadata_globals(self):
         """Test for handling of int, float, bool, list & dict in global attrs"""
         a = dm.SpaceData()
@@ -890,6 +976,110 @@ class JSONTests(unittest.TestCase):
             self.assertTrue(key in dat2['MVar'].attrs)
         np.testing.assert_array_equal(a['MVar'], dat2['MVar'])
         os.remove(t_file.name)
+
+    def test_toJSON_timeunaltered(self):
+        """Test to check that stored datetimes aren't changed on write"""
+        data = dm.SpaceData()
+        data['Epoch'] = spt.tickrange('20200101', '20200102',
+                                      deltadays=datetime.timedelta(hours=1)).UTC
+        exptype = type(data['Epoch'][0]) #datetime.datetime
+        # save to file, then immediately clean up
+        fname = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as fp:
+                fname = fp.name
+                data.toJSONheadedASCII(fname)
+        finally:
+            if fname != None:
+                os.remove(fname)
+        restype = type(data['Epoch'][0])
+        self.assertEqual(exptype, restype)
+
+    def test_dateToISOunaltered_SD(self):
+        """Test to check that _dateToISO doesn't change datatypes, input SpaceData"""
+        data = dm.SpaceData()
+        data['Epoch'] = spt.tickrange('20200101', '20200102',
+                                      deltadays=datetime.timedelta(hours=1)).UTC
+        exptype = type(data['Epoch'][0])
+        newdata = dm._dateToISO(data)
+        restype = type(data['Epoch'][0])
+        self.assertEqual(exptype, restype)
+
+    def test_dateToISOunaltered_dm(self):
+        """Test to check that _dateToISO doesn't change datatypes, input dmarray"""
+        data = spt.tickrange('20200101', '20200102',
+                             deltadays=datetime.timedelta(hours=1)).UTC
+        exptype = type(data[0])
+        newdata = dm._dateToISO(data)
+        restype = type(data[0])
+        self.assertEqual(exptype, restype)
+
+
+class VariableTests(unittest.TestCase):
+    def test_createISTPattrs_data(self):
+        """createISTPattrs should give known results and error check for data"""
+        # catch bad datatype
+        with self.assertRaises(ValueError):
+            dm.createISTPattrs('badval')
+        # test with a datatype type and vartype
+        a = dm.createISTPattrs('data', vartype='float')
+        a_ans = {'CATDESC': '',
+                 'DISPLAY_TYPE': 'time_series',
+                 'FIELDNAM': '',
+                 'FILLVAL': -1e+31,
+                 'FORMAT': 'F18.6',
+                 'LABLAXIS': '',
+                 'SI_CONVERSION': ' > ',
+                 'UNITS': ' ',
+                 'VALIDMIN': '',
+                 'VALIDMAX': '',
+                 'VAR_TYPE': 'data',
+                 'DEPEND_0': 'Epoch'}
+        self.assertEqual(a, a_ans)
+
+    def test_createISTPattrs_support_data(self):
+        """createISTPattrs should give known results and error check for support_data"""
+        # test with a datatype type and vartype
+        a = dm.createISTPattrs('support_data', vartype='float')
+        a_ans = {'CATDESC': '',
+                 'FIELDNAM': '',
+                 'FORMAT': 'F18.6',
+                 'UNITS': ' ',
+                 'VAR_TYPE': 'support_data',
+                 'DEPEND_0': 'Epoch',
+                 'VALIDMIN': '',
+                 'VALIDMAX': '',
+                 'FILLVAL': -1e+31}
+        self.assertEqual(a, a_ans)
+        # same for an NRV variable
+        a = dm.createISTPattrs('support_data', vartype='float', NRV=True)
+        a_ans = {'CATDESC': '',
+                 'FIELDNAM': '',
+                 'FORMAT': 'F18.6',
+                 'UNITS': ' ',
+                 'VAR_TYPE': 'support_data'}
+        self.assertEqual(a, a_ans)
+
+    def test_createISTPattrs_metadata(self):
+        """createISTPattrs should give known results and error check for metadata"""
+        # test with a datatype type and vartype
+        a = dm.createISTPattrs('metadata', vartype='float')
+        a_ans = {'CATDESC': '',
+                 'FIELDNAM': '',
+                 'FORMAT': 'F18.6',
+                 'UNITS': ' ',
+                 'VAR_TYPE': 'metadata',
+                 'DEPEND_0': 'Epoch',
+                 'FILLVAL': -1e+31}
+        self.assertEqual(a, a_ans)
+        # same for an NRV variable
+        a = dm.createISTPattrs('metadata', vartype='float', NRV=True)
+        a_ans = {'CATDESC': '',
+                 'FIELDNAM': '',
+                 'FORMAT': 'F18.6',
+                 'UNITS': ' ',
+                 'VAR_TYPE': 'metadata'}
+        self.assertEqual(a, a_ans)
 
 
 if __name__ == "__main__":

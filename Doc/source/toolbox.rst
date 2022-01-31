@@ -11,7 +11,6 @@ toolbox - Toolbox of various functions and generic utilities
 - `Array binning`_
 - `Array creation`_
 - `Array searching and masking`_
-- `Quaternion math`_
 - `Other functions`_
 - `Multithreading and multiprocessing`_
 - `System tools`_
@@ -47,16 +46,6 @@ Array searching and masking
     tOverlap
     tOverlapHalf
 
-Quaternion math
----------------
-.. autosummary::
-    :toctree: autosummary
-
-    quaternionRotateVector
-    quaternionNormalize
-    quaternionMultiply
-    quaternionConjugate
-
 Other functions
 ---------------
 .. autosummary::
@@ -66,16 +55,17 @@ Other functions
     bootHisto
     dictree
     eventTimer
-    feq
     getNamedPath
     human_sort
     hypot
+    indsFromXrange
     interpol
     intsolve
     medAbsDev
     mlt2rad
     normalize
     pmm
+    poisson_fit
     rad2mlt
     windowMean
 

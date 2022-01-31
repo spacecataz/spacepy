@@ -1,5 +1,5 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3252523.svg)](https://doi.org/10.5281/zenodo.3252523)
-[![Build Status](https://api.travis-ci.com/spacepy/spacepy.svg?branch=master)](https://travis-ci.com/spacepy/spacepy)
+[![Build Status](https://github.com/spacepy/spacepy/workflows/CI/badge.svg?branch=master)](https://github.com/spacepy/spacepy/actions?query=workflow%3ACI)
 
 # SpacePy
 
@@ -41,8 +41,8 @@ SpacePy supports both Python 2.7 and 3.x.
 ### Dependencies
 
 SpacePy has a number of well-maintained dependencies, most of which are automatically installed by ```pip```. These include:
- - numpy (>=1.6, !=1.15.0)
- - scipy (>=0.10)
+ - numpy (>=1.10, !=1.15.0)
+ - scipy (>=0.11)
  - matplotlib (>=1.5)
  - h5py
 
@@ -75,4 +75,5 @@ Certain modules may provide additional citations in the ```__citation__``` attri
 
 For acknowledging SpacePy, please provide the URL to our github repository. [github.com/spacepy/spacepy](https://github.com/spacepy/spacepy)
 
-
+## Changes
+Changes in the released version of SpacePy are provided in the [release notes](https://spacepy.github.io/release_notes.html). For changes since the latest release, see the [repository version](https://github.com/spacepy/spacepy/blob/master/Doc/source/release_notes.rst).

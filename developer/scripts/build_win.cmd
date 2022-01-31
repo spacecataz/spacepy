@@ -3,24 +3,28 @@
 @ECHO OFF
 SETLOCAL EnableDelayedExpansion
 
-FOR %%B in (32 64) DO (FOR %%P in (27 36 37) DO CALL :build %%B %%P)
+:: Get any system Python out of the way
+set PYTHONPATH=
+set PATH=
+
+FOR %%B in (32 64) DO (FOR %%P in (27 36 37 38 39) DO CALL :build %%B %%P)
 
 GOTO :EOF
 
 :build
 IF "%1"=="32" (
-    set CONDA_PKGS_DIRS=%USERPROFILE%\Miniconda3\PKGS32
+    set CONDA_PKGS_DIRS=%SYSTEMDRIVE%\Miniconda3\PKGS32
     set CONDA_SUBDIR=win-32
     set CONDA_FORCE_32_BIT=1
 ) ELSE (
-    set CONDA_PKGS_DIRS=%USERPROFILE%\Miniconda3\PKGS64
+    set CONDA_PKGS_DIRS=%SYSTEMDRIVE%\Miniconda3\PKGS64
     set CONDA_SUBDIR=win-64
     set CONDA_FORCE_32_BIT=
 )
 set PYVER="%2"
-CALL %USERPROFILE%\Miniconda3\Scripts\activate py%2_%1
+CALL "%SYSTEMDRIVE%\Miniconda3\Scripts\activate" py%2_%1
 pushd %~dp0\..\..\
-rmdir /s /q build
+rmdir /s /q build 2> nul
 CALL python setup.py bdist_wheel
 CALL python setup.py bdist_wininst
 for %%f in (dist\spacepy-*.*.*.win32.exe dist\spacepy-*.*.*.win-amd64.exe) DO (

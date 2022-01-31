@@ -68,6 +68,12 @@ import weakref
 import numpy
 import numpy.ma
 import spacepy.datamodel
+import spacepy.time
+try:
+    import matplotlib.dates
+    HAVE_MATPLOTLIB = True
+except ImportError:
+    HAVE_MATPLOTLIB = False
 
 #Import const AFTER library loaded, so failed load doesn't leave half-imported
 #from . import const
@@ -459,8 +465,8 @@ class Library(object):
             self.tt2000_to_epoch16 = self._bad_tt2000
             self.v_tt2000_to_epoch16 = self._bad_tt2000
 
-        #Default to V2 CDF
-        self.set_backward(True)
+        # User has not explicitly called set_backward
+        self._explicit_backward = False
 
     @staticmethod
     def _find_lib():
@@ -639,7 +645,11 @@ class Library(object):
         Set backward compatibility mode for new CDFs
 
         Unless backward compatible mode is set, CDF files created by
-        the version 3 library can not be read by V2.
+        the version 3 library can not be read by V2. pycdf does not
+        set backward compatible mode by default.
+
+        .. versionchanged:: 0.3.0
+           Before 0.3.0, pycdf set backward compatible mode on import.
 
         Parameters
         ==========
@@ -650,6 +660,8 @@ class Library(object):
         ======
         ValueError : if backward=False and underlying CDF library is V2
         """
+        # User has explicitly chosen backward compat or not
+        self._explicit_backward = True
         if self.version[0] < 3:
             if not backward:
                 raise ValueError(
@@ -865,11 +877,29 @@ class Library(object):
         Returns
         =======
         out : double
-            Floating point number representing days since 0001-01-01.
+            Floating point number representing days since matplotlib
+            epoch (usually 0001-01-01 as day 1, or 1970-01-01 as day 0).
+
+        See Also
+        ========
+        matplotlib.dates.date2num, matplotlib.dates.num2date
+
+        Notes
+        =====
+        This number is not portable between versions of matplotlib. The
+        returned value is for the installed version of matplotlib. If
+        matplotlib is not found, the returned value is for matplotlib 3.2
+        and earlier.
         """
         #date2num day 1 is 1/1/1 00UT
         #epoch 1/1/1 00UT is 31622400000.0 (millisecond)
-        return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
+        # So day 0 is 31536000000.0
+        baseepoch = 31536000000.0
+        if HAVE_MATPLOTLIB and hasattr(matplotlib.dates, 'get_epoch'):
+            # Different day 0
+            baseepoch = spacepy.time.Ticktock(matplotlib.dates.get_epoch())\
+                                    .CDF[0]
+        return (epoch - baseepoch) / (24 * 60 * 60 * 1000.0)
 
     def epoch16_to_epoch(self, epoch16):
         """
@@ -1917,7 +1947,11 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
             Not intended for direct call; pass parameters to
             :py:class:`pycdf.CDF` constructor.
         """
-
+        if not lib._explicit_backward:
+            warnings.warn(
+                'spacepy.pycdf.lib.set_backward not called;'
+                ' making v3-compatible CDF.',
+                DeprecationWarning)
         lib.call(const.CREATE_, const.CDF_, self.pathname, ctypes.c_long(0),
                               (ctypes.c_long * 1)(0), ctypes.byref(self._handle))
         self._opened = True
@@ -2202,7 +2236,8 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
         return _compress(self, comptype, param)
 
     def new(self, name, data=None, type=None, recVary=None, dimVarys=None,
-            dims=None, n_elements=None, compress=None, compress_param=None):
+            dims=None, n_elements=None, compress=None, compress_param=None,
+            sparse=None, pad=None):
         """Create a new zVariable in this CDF
 
         .. note::
@@ -2248,6 +2283,18 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
         compress_param : ctypes.c_long
             Compression parameter if compression used; reasonable default
             is chosen. See :py:meth:`Var.compress`.
+        sparse : ctypes.c_long
+
+            .. versionadded:: 0.2.3
+
+            Sparse records type for this variable, default None (no sparse
+            records). See :meth:`Var.sparse`.
+        pad :
+
+            .. versionadded:: 0.2.3
+
+            Pad value for this variable, default None (do not set). See
+            :meth:`Var.pad`.
 
         Returns
         =======
@@ -2259,6 +2306,18 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
         ValueError : if neither data nor sufficient typing information
                      is provided.
 
+        Warns
+        =====
+        DeprecationWarning
+            if no type is provided and data is datetime, warn
+            that a default type was chosen (usually TIME_TT2000).
+
+            .. versionchanged:: 0.3.0
+               Before 0.3.0 (when the default changed from EPOCH/EPOCH16
+               to TIME_TT2000), this warned that the default would change.
+
+            .. versionadded:: 0.2.3
+
         Notes
         =====
         Any given data may be representable by a range of CDF types; if
@@ -2268,8 +2327,8 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
             #. If input data is a numpy array, match the type of that array
             #. Proper kind (numerical, string, time)
             #. Proper range (stores highest and lowest number provided)
-            #. Sufficient resolution (EPOCH16 required if datetime has
-               microseconds or below.)
+            #. Sufficient resolution (EPOCH16 or TIME_TT2000 required if datetime
+               has microseconds or below.)
 
         If more than one value satisfies the requirements, types are returned
         in preferred order:
@@ -2280,9 +2339,14 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
             #. signed type first, then
             #. specifically-named (CDF_BYTE) vs. generically named (CDF_INT1)
 
-        So for example, EPOCH_16 is preferred over EPOCH if ``data`` specifies
+        TIME_TT2000 is always the preferred time type if it is available.
+        Otherwise, EPOCH_16 is preferred over EPOCH if ``data`` specifies
         below the millisecond level (rule 1), but otherwise EPOCH is preferred
         (rule 2).
+
+        .. versionchanged:: 0.3.0
+           Before 0.3.0, EPOCH or EPOCH_16 were used if not specified. Now
+           TIME_TT2000 is always the preferred type.
 
         For floats, four-byte is preferred unless eight-byte is required:
 
@@ -2302,8 +2366,13 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
             else:
                 if compress is None:
                     compress = c
-                if compress_param is None:
-                    compress_param = cp
+                # Ignore data's compress_param if using compress argument
+                    if compress_param is None:
+                        compress_param = cp
+        if hasattr(data, 'sparse') and sparse is None:
+            sparse = data.sparse()
+        if hasattr(data, 'pad') and pad is None:
+            pad = data.pad()
         #Get defaults from VarCopy if data looks like a VarCopy
         if recVary is None:
             recVary = data.rv() if hasattr(data, 'rv') else True
@@ -2340,8 +2409,14 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
                     dims = guess_dims
             if type is None:
                 type = guess_types[0]
-                if type == const.CDF_EPOCH16.value and self.backward:
+                if type in (const.CDF_EPOCH16.value,
+                            const.CDF_TIME_TT2000.value) and self.backward:
                     type = const.CDF_EPOCH
+                if type in lib.timetypes and len(guess_types) > 1:
+                    warnings.warn(
+                        'No type specified for time input; assuming {}.'
+                        .format(lib.cdftypenames[type]),
+                        DeprecationWarning)
             if n_elements is None:
                 n_elements = guess_elements
         if dimVarys is None:
@@ -2360,8 +2435,12 @@ class CDF(MutableMapping, spacepy.datamodel.MetaMixin):
             raise ValueError('Data requires EPOCH16, INT8, or TIME_TT2000; '
                              'incompatible with backward-compatible CDF')
         new_var = Var(self, name, type, n_elements, dims, recVary, dimVarys)
-        if compress != None:
+        if compress is not None:
             new_var.compress(compress, compress_param)
+        if sparse is not None:
+            new_var.sparse(sparse)
+        if pad is not None:
+            new_var.pad(pad)
         if data is not None:
             new_var[...] = data
             if hasattr(data, 'attrs'):
@@ -2834,11 +2913,12 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
         The C CDF library allows reading records which have not been
         written to a file, returning a pad value. pycdf checks the
         size of a variable and will raise `IndexError` for most
-        attempts to read past the end. If these checks fail, a value
-        is returned with a warning ``VIRTUAL_RECORD_DATA``. Please
-        `open an issue
+        attempts to read past the end, except for variables with sparse
+        records. If these checks fail, a value is returned with a warning
+        ``VIRTUAL_RECORD_DATA``. Please `open an issue
         <https://github.com/spacepy/spacepy/issues/new>`_ if this
-        occurs. See pg. 39 and following of the `CDF User's Guide
+        occurs for variables without sparse records. See pg. 39 and
+        following of the `CDF User's Guide
         <https://cdf.gsfc.nasa.gov/html/cdf_docs.html>`_ for more on
         virtual records.
 
@@ -2942,6 +3022,12 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
     >>> del Flux[...]
 
     .. note::
+        Variables using sparse records do not support insertion and only
+        support deletion of a single record at a time. See
+        :meth:`~Var.sparse` and section 2.3.12 of the CDF user's guide for
+        more information on sparse records.
+
+    .. note::
         Although this interface only directly supports zVariables, zMode is
         set on opening the CDF so rVars appear as zVars. See p.24 of the
         CDF user's guide; pyCDF uses zMode 2.
@@ -2957,9 +3043,11 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
         ~Var.insert
         ~Var.name
         ~Var.nelems
+        ~Var.pad
         ~Var.rename
         ~Var.rv
         ~Var.shape
+        ~Var.sparse
         ~Var.type
     .. attribute:: Var.attrs
 
@@ -2972,9 +3060,11 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
     .. automethod:: insert
     .. automethod:: name
     .. automethod:: nelems
+    .. automethod:: pad
     .. automethod:: rename
     .. automethod:: rv
     .. autoattribute:: shape
+    .. automethod:: sparse
     .. automethod:: type
     """
     def __init__(self, cdf_file, var_name, *args):
@@ -3057,7 +3147,7 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
         if hslice.counts[0] != 0:
             hslice.select()
             lib.call(const.GET_, const.zVAR_HYPERDATA_,
-                     result.ctypes.data_as(ctypes.c_void_p))
+                    result.ctypes.data_as(ctypes.c_void_p))
         return hslice.convert_input_array(result)
 
     def __delitem__(self, key):
@@ -3086,6 +3176,9 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
             raise TypeError('Can only delete entire records.')
         if hslice.counts[0] == 0:
             return
+        if hslice.sr and not hslice.degen[0]:
+            raise NotImplementedError(
+                'Sparse records do not support multi-record delete.')
         start = hslice.starts[0]
         count = hslice.counts[0]
         interval = hslice.intervals[0]
@@ -3125,20 +3218,22 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
                 lib.call(const.DELETE_, const.zVAR_RECORDS_,
                          ctypes.c_long(recno), ctypes.c_long(recno))
 
-    def __setitem__(self, key, data):
-        """Puts a slice into the data array. Details under :py:class:`pycdf.Var`.
+    def _prepare(self, data):
+        """Convert data to numpy array for writing to CDF
 
-        @param key: index or slice to store
-        @type key: int or slice
-        @param data: data to store
-        @type data: numpy.array
-        @raise IndexError: if L{key} is out of range, mismatches dimensions,
-                           or simply unparseable. IndexError will
-        @raise CDFError: for errors from the CDF library
+        Converts input data intended for CDF writing into a numpy array,
+        so the array's buffer can be used directly for the output buffer
+
+        Parameters
+        ==========
+        data : various
+            data to write
+
+        Returns
+        =======
+        numpy.ndarray
+            `data` converted, including time conversions
         """
-        hslice = _Hyperslice(self, key)
-        n_recs = hslice.counts[0]
-        hslice.expand(data)
         cdf_type = self.type()
         if cdf_type == const.CDF_EPOCH16.value:
             if not self._raw:
@@ -3167,6 +3262,24 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
         else:
              data = numpy.require(data, requirements=('C', 'A', 'W'),
                                   dtype=self._np_type())
+        return data
+
+    def __setitem__(self, key, data):
+        """Puts a slice into the data array. Details under :py:class:`pycdf.Var`.
+
+        @param key: index or slice to store
+        @type key: int or slice
+        @param data: data to store
+        @type data: numpy.array
+        @raise IndexError: if L{key} is out of range, mismatches dimensions,
+                           or simply unparseable. IndexError will
+        @raise CDFError: for errors from the CDF library
+        """
+        hslice = _Hyperslice(self, key)
+        n_recs = hslice.counts[0]
+        hslice.expand(data)
+        cdf_type = self.type()
+        data = self._prepare(data)
         if cdf_type == const.CDF_EPOCH16.value:
             datashape = data.shape[:-1]
         else:
@@ -3182,12 +3295,18 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
         if hslice.counts[0] > n_recs and \
                hslice.starts[0] + n_recs < hslice.dimsizes[0]:
             #Specified slice ends before last record, so insert in middle
+            if hslice.sr:
+                raise NotImplementedError(
+                    'Sparse records do not support insertion.')
             saved_data = self[hslice.starts[0] + n_recs:]
         if hslice.counts[0] > 0:
             hslice.select()
             lib.call(const.PUT_, const.zVAR_HYPERDATA_,
                      data.ctypes.data_as(ctypes.c_void_p))
         if hslice.counts[0] < n_recs:
+            if hslice.sr:
+                raise NotImplementedError(
+                    'Sparse records do not support truncation on write.')
             first_rec = hslice.starts[0] + hslice.counts[0]
             last_rec = hslice.dimsizes[0] - 1
             lib.call(const.DELETE_, const.zVAR_RECORDS_,
@@ -3413,6 +3532,87 @@ class Var(MutableSequence, spacepy.datamodel.MetaMixin):
         vary = ctypes.c_long(0)
         self._call(const.GET_, const.zVAR_RECVARY_, ctypes.byref(vary))
         return vary.value != const.NOVARY.value
+
+    def sparse(self, sparsetype=None):
+        """
+        Gets or sets this variable's sparse records mode.
+
+        Sparse records mode may not be changeable on variables with data
+        already written; even deleting the data may not permit the change.
+
+        See section 2.3.12 of the CDF user's guide for more information on
+        sparse records.
+
+        Other Parameters
+        ================
+        sparsetype : ctypes.c_long
+            If specified, should be a sparse record mode from
+            :mod:`~spacepy.pycdf.const`; see also CDF C reference manual
+            section 4.11.1. If not specified, the sparse record mode for this
+            variable will not change.
+
+        Returns
+        =======
+        out : ctypes.c_long
+            Sparse record mode for this variable.
+
+        Notes
+        =====
+        .. versionadded:: 0.2.3
+        """
+        valid_sr = [
+            const.NO_SPARSERECORDS, 
+            const.PREV_SPARSERECORDS,
+            const.PAD_SPARSERECORDS
+        ]
+        if sparsetype is not None:
+            if not hasattr(sparsetype, 'value'):
+                comptype = ctypes.c_long(sparsetype)
+            self._call(const.PUT_, const.zVAR_SPARSERECORDS_, sparsetype)
+        sr = ctypes.c_long(0)
+        self._call(const.GET_, const.zVAR_SPARSERECORDS_, ctypes.byref(sr))
+        values = {v.value : v for v in valid_sr}
+        return values[sr.value]
+
+    def pad(self, value=None):
+        """
+        Gets or sets this variable's pad value.
+
+        See section 2.3.20 of the CDF user's guide for more information on
+        pad values.
+
+        Other Parameters
+        ================
+        value : 
+            If specified, should be an appropriate pad value. If not
+            specified, the pad value will not be set or changed.
+
+        Returns
+        =======
+        out : 
+            Current pad value for this variable. ``None`` if it has never been
+            set. This rarely happens; the pad value is usually set by the CDF
+            library on variable creation.
+
+        Notes
+        =====
+        .. versionadded:: 0.2.3
+        """
+        if value is not None:
+            data = self._prepare(value)
+            self._call(const.PUT_, const.zVAR_PADVALUE_, 
+                    data.ctypes.data_as(ctypes.c_void_p))
+
+        # Prepare buffer for return, to get array of correct type
+        # pretend it's [0, 0, 0, 0...] of the variable
+        hslice = _Hyperslice(self, (0,)*(self._n_dims() + int(self.rv())))
+        result = hslice.create_array()
+        status = self._call(const.GET_, const.zVAR_PADVALUE_,
+                            result.ctypes.data_as(ctypes.c_void_p),
+                            ignore=(const.NO_PADVALUE_SPECIFIED,))
+        if status == const.NO_PADVALUE_SPECIFIED:
+            return None
+        return hslice.convert_input_array(result)
 
     def dv(self, new_dv=None):
         """
@@ -3714,8 +3914,10 @@ class VarCopy(spacepy.datamodel.dmarray):
         compress
         dv
         nelems
+        pad
         rv
         set
+        sparse
         type
 
     .. attribute:: attrs
@@ -3725,8 +3927,10 @@ class VarCopy(spacepy.datamodel.dmarray):
     .. automethod:: compress
     .. automethod:: dv
     .. automethod:: nelems
+    .. automethod:: pad
     .. automethod:: rv
     .. automethod:: set
+    .. automethod:: sparse
     .. automethod:: type
 
     """
@@ -3740,13 +3944,9 @@ class VarCopy(spacepy.datamodel.dmarray):
         @type zVar: :py:class:`pycdf.Var`
         """
         obj = super(VarCopy, cls).__new__(cls, zVar[...], zVar.attrs.copy())
-        obj._cdf_meta = {
-            'compress': zVar.compress(),
-            'dv': zVar.dv(),
-            'nelems': zVar.nelems(),
-            'rv': zVar.rv(),
-            'type': zVar.type(),
-            }
+        obj._cdf_meta = { k: getattr(zVar, k)() for k in (
+            'compress', 'dv', 'nelems', 'rv', 'sparse', 'type') }
+        obj._cdf_meta['pad'] = zVar.pad() if obj._cdf_meta['rv'] else None
         return obj
 
     def compress(self, *args, **kwargs):
@@ -3796,6 +3996,26 @@ class VarCopy(spacepy.datamodel.dmarray):
         """
         return self._cdf_meta['nelems']
 
+    def pad(self):
+        """Gets pad value of the copied variable.
+
+        This copy does *not* preserve which records were written, i.e.
+        the entire copy is read, including pad values, and the pad values
+        are treated as real data (if, e.g. writing to another CDF).
+
+        For details on padding, see :meth:`spacepy.pycdf.Var.pad`.
+
+        Returns
+        =======
+        various
+            Pad value, matching type of the variable.
+
+        Notes
+        =====
+        .. versionadded:: 0.2.3
+        """
+        return self._cdf_meta['pad']
+
     def rv(self):
         """Gets record variance of the variable this was copied from.
 
@@ -3827,6 +4047,26 @@ class VarCopy(spacepy.datamodel.dmarray):
         if key not in self._cdf_meta:
             raise KeyError('Invalid CDF metadata key {}'.format(key))
         self._cdf_meta[key] = value
+
+    def sparse(self):
+        """Gets sparse records mode of the copied variable.
+
+        This copy does *not* preserve which records were written, i.e.
+        the entire copy is read, including pad values, and the pad values
+        are treated as real data (if, e.g. writing to another CDF).
+
+        For details on sparse records, see :meth:`spacepy.pycdf.Var.sparse`.
+
+        Returns
+        =======
+        ctypes.c_long
+            Sparse record type
+
+        Notes
+        =====
+        .. versionadded:: 0.2.3
+        """
+        return self._cdf_meta['sparse']
 
     def type(self):
         """Returns CDF type of the variable this was copied from.
@@ -3896,6 +4136,7 @@ class _Hyperslice(object):
 
         self.zvar = zvar
         self.rv = self.zvar.rv()
+        self.sr = self.zvar.sparse() != const.NO_SPARSERECORDS
         #dim of records, + 1 record dim (NRV always is record 0)
         self.dims = zvar._n_dims() + 1
         self.dimsizes = [len(zvar)] + \
@@ -3904,8 +4145,8 @@ class _Hyperslice(object):
         self.counts = numpy.empty((self.dims,), dtype=numpy.int32)
         self.counts.fill(1)
         self.intervals = [1] * self.dims
-        self.degen = numpy.zeros(self.dims, dtype=numpy.bool)
-        self.rev = numpy.zeros(self.dims, dtype=numpy.bool)
+        self.degen = numpy.zeros(self.dims, dtype=bool)
+        self.rev = numpy.zeros(self.dims, dtype=bool)
         #key is:
         #1. a single value (integer or slice object) if called 1D
         #2. a tuple (of integers and/or slice objects) if called nD
@@ -3927,14 +4168,20 @@ class _Hyperslice(object):
             for i in range(self.dims):
                 idx = key[i]
                 if hasattr(idx, 'start'): #slice
+                    # Allow read-off-end for record dim if sparse
+                    off_end = self.sr and idx.stop is not None \
+                              and idx.stop > self.dimsizes[i] and i == 0
                     (self.starts[i], self.counts[i],
                      self.intervals[i], self.rev[i]) = \
-                     self.convert_range(idx.start, idx.stop,
-                                              idx.step, self.dimsizes[i])
+                     self.convert_range(
+                         idx.start, idx.stop, idx.step,
+                         idx.stop if off_end else self.dimsizes[i])
                 else: #Single degenerate value
                     if idx < 0:
                         idx += self.dimsizes[i]
-                    if idx != 0 and (idx >= self.dimsizes[i] or idx < 0):
+                    out_of_range = idx < 0 or \
+                        (idx >= self.dimsizes[i] and not self.sr)
+                    if idx != 0 and out_of_range:
                         raise IndexError('list index out of range')
                     self.starts[i] = idx
                     self.degen[i] = True
@@ -4147,7 +4394,7 @@ class _Hyperslice(object):
     def check_well_formed(data):
         """Checks if input data is well-formed, regular array"""
         d = numpy.asanyarray(data)
-        if d.dtype == numpy.object: #this is probably going to be bad
+        if d.dtype == object: #this is probably going to be bad
             if d.shape != () and not len(d):
                 #Completely empty, so "well-formed" enough
                 return
@@ -4182,7 +4429,7 @@ class _Hyperslice(object):
         the CDF types which can represent this data. This breaks down to:
           1. Proper kind (numerical, string, time)
           2. Proper range (stores highest and lowest number)
-          3. Sufficient resolution (EPOCH16 required if datetime has
+          3. Sufficient resolution (EPOCH16 or TT2000 required if datetime has
              microseconds or below.)
 
         If more than one value satisfies the requirements, types are returned
@@ -4194,7 +4441,7 @@ class _Hyperslice(object):
           5. specifically-named (CDF_BYTE) vs. generically named (CDF_INT1)
         So for example, EPOCH_16 is preferred over EPOCH if L{data} specifies
         below the millisecond level (rule 1), but otherwise EPOCH is preferred
-        (rule 2).
+        (rule 2). TIME_TT2000 is always preferred as of 0.3.0.
 
         For floats, four-byte is preferred unless eight-byte is required:
           1. absolute values between 0 and 3e-39
@@ -4226,16 +4473,16 @@ class _Hyperslice(object):
                 elements //= 4
         elif d.size and hasattr(numpy.ma.getdata(d).flat[0], 'microsecond'):
             if max((dt.microsecond % 1000 for dt in d.flat)) > 0:
-                types = [const.CDF_EPOCH16, const.CDF_EPOCH,
-                         const.CDF_TIME_TT2000]
+                types = [const.CDF_TIME_TT2000, const.CDF_EPOCH16,
+                         const.CDF_EPOCH]
             else:
-                types = [const.CDF_EPOCH, const.CDF_EPOCH16,
-                         const.CDF_TIME_TT2000]
+                types = [const.CDF_TIME_TT2000, const.CDF_EPOCH,
+                         const.CDF_EPOCH16]
             if backward:
                 del types[types.index(const.CDF_EPOCH16)]
-                del types[-1]
+                del types[0]
             elif not lib.supports_int8:
-                del types[-1]
+                del types[0]
         elif d is data or isinstance(data, numpy.generic):
             #numpy array came in, use its type (or byte-swapped)
             types = [k for k in lib.numpytypedict
@@ -4298,7 +4545,7 @@ class _Hyperslice(object):
                        and const.CDF_INT8 in types:
                     del types[types.index(const.CDF_INT8)]
             else: #float
-                if dims is ():
+                if dims == ():
                     if d != 0 and (abs(d) > 1.7e38 or abs(d) < 3e-39):
                         types = [const.CDF_DOUBLE, const.CDF_REAL8]
                     else:
@@ -4623,10 +4870,13 @@ class Attr(MutableSequence):
                 vartype = self._cdf_file[i].type()
                 if vartype in types:
                     entry_type = vartype
-                else:
-                    entry_type = types[0]
-            elif entry_type is None:
+            if entry_type is None:
                 entry_type = types[0]
+                if entry_type in lib.timetypes and len(types) > 1:
+                    warnings.warn(
+                        'Assuming {} for time input.'
+                        .format(lib.cdftypenames[entry_type]),
+                        DeprecationWarning)
             if not entry_type in lib.numpytypedict:
                 raise ValueError('Cannot find a matching numpy type.')
             typelist.append((dims, entry_type, elements))
@@ -5211,13 +5461,11 @@ class AttrList(MutableMapping):
 
         ~AttrList.clone
         ~AttrList.copy
-        ~AttrList.from_dict
         ~AttrList.new
         ~AttrList.rename
     
     .. automethod:: clone
     .. automethod:: copy
-    .. automethod:: from_dict
     .. automethod:: new
     .. automethod:: rename
     """
@@ -5443,28 +5691,6 @@ class AttrList(MutableMapping):
             the new name of the attribute
         """
         AttrList.__getitem__(self, old_name).rename(new_name)
-
-    def from_dict(self, in_dict):
-        """
-        Fill this list of attributes from a dictionary
-
-        .. deprecated:: 0.1.5
-           Use :meth:`~spacepy.pycdf.AttrList.clone` instead; it supports
-           cloning from dictionaries.
-
-        Parameters
-        ==========
-        in_dict : dict
-            Attribute list is populated entirely from this dictionary;
-            all existing attributes are deleted.
-        """
-        warnings.warn("from_dict is deprecated and will be removed. Use clone.",
-                      DeprecationWarning)
-        for k in in_dict:
-            self[k] = in_dict[k]
-        for k in list(self):
-            if not k in in_dict:
-                del self[k]
 
     def _clone_attr(self, master, name, new_name=None):
         """Clones a single attribute from one in this list or another

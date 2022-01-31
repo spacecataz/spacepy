@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 import numpy.testing as ntest
 
+import spacepy_testing
 try:
     import seapy
 except ImportError:
@@ -32,7 +33,7 @@ class SEATestsUniform(unittest.TestCase):
         self.unidata = [self.testval]*200
         time = list(range(200))
         self.epochs = [20,40,60,80,100,120,140,160,180]
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.filterwarnings('always', 'Window size changed .*',
                                     UserWarning, '^spacepy\\.seapy$')
             self.obj = seapy.Sea(self.unidata, time, self.epochs, verbose=False)

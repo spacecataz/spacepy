@@ -2,20 +2,35 @@
 Installing SpacePy
 ******************
 
-The simplest way from zero to a working SpacePy setup is:
+The simplest way from zero (no Python) to a working SpacePy setup is:
 
   1. Install the `Anaconda <https://docs.anaconda.com/anaconda/>`_ Python
      environment. Python 3 is strongly recommended (64-bit is recommended).
   2. ``pip install --upgrade spacepy``
 
+If you already have a working Python setup, install SpacePy by:
+
+  1. ``pip install --upgrade numpy``
+  2. ``pip install --upgrade spacepy``
+
+This will install a binary build of SpacePy if available (currently
+only on Windows), otherwise it will attempt to compile. It will also
+install most dependencies.
+
+``numpy`` must be installed first as it's required for the SpacePy
+build. See :doc:`install_windows` for important notes regarding numpy
+on Windows.
+
 If you are familiar with installing Python packages, have particular
 preferences for managing an installation, or if the above doesn't
 work, refer to platform-specific instructions and the details
-below. (In particular, if you will use :mod:`~spacepy.LANLstar` on
-Windows, see :doc:`install_windows`.)
+below. (In particular, if you will use :mod:`~spacepy.LANLstar`).
 
 For installing the NASA CDF library to support :mod:`~spacepy.pycdf`,
 see the platform-specific instructions linked below.
+
+The first time a user imports SpacePy, it automatically creates the
+:doc:`configuration directory <configuration>`.
 
 If you need further assistance, you can `open an issue
 <https://github.com/spacepy/spacepy/issues>`_.

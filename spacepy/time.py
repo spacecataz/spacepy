@@ -1,8 +1,72 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-Time conversion, manipulation and implementation of Ticktock class
+"""Time conversion, manipulation and implementation of Ticktock class
 
+Notes
+=====
+The handling of time, in particular the conversions between representations,
+can be more complicated than it seems on the surface. This can result in
+some surprising behavior, particularly when requiring second-level accuracy and
+converting between time systems outside of the period 1972 to present.
+It is strongly recommended to use TAI if transferring times between SpacePy
+and other libraries. TAI has a consistent, unambiguous definition and no
+discontinuities.
+
+Some time systems (e.g. the UTC representation via datetime) cannot represent
+times during a leapsecond. SpacePy represents all these times as the latest
+representable time in the day, e.g.::
+
+    >>> spacepy.time.Ticktock('2008-12-31T23:59:60').UTC[0]
+    datetime.datetime(2008, 12, 31, 23, 59, 59, 999999)
+
+Conversions between continuous time representations (e.g. TAI), leap second
+aware representations (e.g. ISO timestrings), and those that ignore leap
+seconds (e.g. UTC datetime, Unix time) are well-defined between the
+introduction of the leap second system to UTC in 1972 and the present.
+For systems that cannot represent leap seconds, the leap second moment is
+considered not to exist. For example, from 23:59:59 on 2008-12-31 to 00:00:00
+on 2009-01-01 is two seconds, but only represents a one-second increment in
+Unix time. Details are also discussed in the individual time representations.
+
+UTC times more than six months in the future are not well-defined, since
+the schedule of leap second insertion is not known in advance. SpacePy
+performs conversions assuming there are no leapseconds after those which have
+been announced by IERS.
+
+Between 1960 and 1972, UTC was defined by means of fractional leap
+seconds and a varying-length second. From 1958 (when UTC was set equal
+to TAI) and 1972, SpacePy treats UTC time similar to after 1972, with
+a consistent second the same length of the SI second, and applying a
+full leap second before the beginning of January and July if UTC - UT1
+exceeded 0.4s. The difference with other methods of calculating UTC is
+less than half a second.
+
+.. versionchanged:: 0.2.3
+   The application of post-1972 rules to 1958-1927 is new in
+   0.2.3. Before, SpacePy applied leap seconds wherever there was an
+   entry in the USNO record of TAI-UTC, rounding fractional total leap
+   second counts to the integer (0.5 rounds up). The UTC second was still
+   treated as the same length as the SI second (i.e., rate changed were
+   not applied.) This resulted in the application of six leap seconds at
+   the beginning of 1972. The discrepancy with other means of calculating
+   TAI-UTC was as much as five seconds by the end of this period.
+
+.. versionchanged:: 0.2.2
+   Before 0.2.2, SpacePy truncated fractional leapseconds rather than rounding.
+
+Before 1958, UTC is not defined. SpacePy assumes days of constant length
+86400 seconds, equal to the SI second. This is almost guaranteed to be wrong;
+for times well out of the space era, it is strongly recommended to work
+consistently in either a continuous time system (e.g. TAI) or a day-based
+system (e.g. JD).
+
+SpacePy assumes dates including and after 1582-10-15 to be in the Gregorian
+calendar and dates including and before 1582-10-04 to be Julian. 10-05 through
+10-14 do not exist. This change is ignored for continuously-running non leap
+second aware timebases: CDF and RDT.
+
+See the :class:`Ticktock` documentation and its various ``get`` functions for
+more details on the exact definitions of time systems used by SpacePy.
 
 Examples:
 =========
@@ -86,7 +150,10 @@ Contact: smorley@lanl.gov,
 
 
 Copyright 2010 Los Alamos National Security, LLC.
+
 """
+from __future__ import absolute_import
+
 import bisect
 try:
     from collections.abc import Callable, MutableSequence
@@ -100,24 +167,22 @@ except ImportError:
     pass  # just use system zip. In python3 itertools.izip is just python zip
 import os.path
 import re
+import time
 import warnings
 
+try:
+    import astropy.time
+    HAVE_ASTROPY = True
+except ImportError:
+    HAVE_ASTROPY = False
 import dateutil.parser as dup
 import numpy as np
 
+import spacepy
 from spacepy import help
 import spacepy.datamodel
 
 __contact__ = 'Steve Morley, smorley@lanl.gov'
-
-"""
-Notes:
-Python's assert statement is a good way to catch situations that should never happen. And it can be removed by Python
-optimization when the code is trusted to be correct. Assert is not to be used in program flow.
-
-In Python, on the other hand, there is no strict distinction between debug and release mode. The interpreter features
-an "optimization flag" (-O), but currently this does not actually optimize the byte code, but only removes asserts.
-"""
 
 
 # -----------------------------------------------
@@ -128,34 +193,106 @@ class Ticktock(MutableSequence):
     Ticktock( data, dtype )
 
     Ticktock class holding various time coordinate systems
-    (TAI, UTC, ISO, JD, MJD, UNX, RDT, CDF, DOY, eDOY)
+    (TAI, UTC, ISO, JD, MJD, UNX, RDT, CDF, DOY, eDOY, APT)
 
     Possible input data types:
-    ISO: ISO standard format like '2002-02-25T12:20:30'
-    UTC: datetime object with UTC time
-    TAI: elapsed seconds since 1958/1/1 (includes leap seconds)
-    UNX: elapsed seconds since 1970/1/1 (all days have 86400 secs sometimes unequal lenghts)
-    JD: Julian days elapsed
-    MJD: Modified Julian days
-    RDT: Rata Die days elapsed since 1/1/1
-    CDF: CDF epoch: milliseconds since 1/1/0000
 
-    Possible output data types:
-    All those listed above, plus
-    DOY:  Integer day of year, starts with day 1
-    eDOY: Fractional day of year, starts at day 0
+    ISO
+        ISO standard format like '2002-02-25T12:20:30'
+    UTC
+        datetime object with UTC time
+    TAI
+        Elapsed seconds since 1958-1-1 (includes leap seconds)
+    UNX
+        Elapsed seconds since 1970-1-1 ignoring leapseconds (all days have
+        86400 secs).
+    JD
+        Julian days elapsed
+    MJD
+        Modified Julian days
+    RDT
+        Rata Die days elapsed since 0001-1-1
+    CDF
+        CDF Epoch type: float milliseconds since 0000-1-1 ignoring leapseconds
+    APT
+        AstroPy :class:`~astropy.time.Time`. Requires AstroPy 1.0.
+        (New in version 0.2.2.)
+
+    Possible output data types: All those listed above, plus:
+
+    DOY
+        Integer day of year, starts with day 1
+    eDOY
+        Fractional day of year, starts at day 0
+
+    It is strongly recommended to access various time systems via the
+    attributes listed above, as in the examples. They will be calculated
+    automatically if necessary. Using the ``get`` methods will force a
+    recalculation.
+
+    The original input data will always be available as the ``data``
+    attribute.
+
+    .. versionchanged:: 0.2.2
+       In earlier versions of SpacePy, most values were derived from the
+       ``datetime``-based ``UTC`` representation. This did not properly
+       handle leap seconds in many cases. Now most are derived from ``TAI``
+       (exceptions being ``DOY`` and ``eDOY``). In addition to differences
+       around actual leap seconds, this may result in small differences
+       between versions of SpacePy, with relative magnitude on the order of the
+       resolution of a 64-bit float (2e-16). For times in the modern era, this
+       is about 50 microseconds (us) for ``JD``, 15 us for ``CDF``, 1.5 us
+       for ``RDT``, 1 us for ``MJD``, and 360 *nanoseconds* for ``TAI``.
+
+    The relationships between parameters and how they are calculated are
+    listed in the ``get`` methods and illustrated below.
+
+    .. only:: latex
+
+        .. image:: ../images/ticktock_relationships.pdf
+
+    .. only:: html
+
+        .. image:: ../images/ticktock_relationships.svg
+            :target: ../_images/ticktock_relationships.svg
 
     Parameters
     ==========
     data : array_like (int, datetime, float, string)
         time stamp
-    dtype : string {`CDF`, `ISO`, `UTC`, `TAI`, `UNX`, `JD`, `MJD`, `RDT`} or function
+    dtype : string {`CDF`, `ISO`, `UTC`, `TAI`, `UNX`, `JD`, `MJD`, `RDT`, `APT`} or function
         data type for data, if a function it must convert input time format to Python datetime
 
     Returns
     =======
     out : Ticktock
         instance with self.data, self.dtype, self.UTC etc
+
+    Notes
+    =====
+    UTC data type is implemented as Python datetime, which cannot represent
+    leap seconds. The time within a leap second is regarded as not happening.
+
+    The CDF data type is the older CDF_EPOCH time type, not the newer
+    CDF_TIME_TT2000. It similarly cannot represent leap seconds. Year
+    0 is considered a leap year.
+
+    Other Parameters
+    ================
+    isoformat : str, optional
+
+        .. versionadded:: 0.2.2
+
+        Format string used for parsing and outputting ISO format. Input is
+        not forced to be in this format; it is tried first, and other
+        common formats tried if parsing fails. Because of this, if ISO input
+        is in a consistent format, specifying this can speed up the input
+        parsing. Can be changed on existing ``Ticktock`` with :meth:`isoformat`
+        method. Default ``'%Y-%m-%dT%H:%M:%S'``.
+
+    See Also
+    ========
+    datetime.datetime.strptime, isoformat
 
     Examples
     ========
@@ -174,6 +311,7 @@ class Ticktock(MutableSequence):
         ~Ticktock.append
         ~Ticktock.argsort
         ~Ticktock.convert
+        ~Ticktock.getAPT
         ~Ticktock.getCDF
         ~Ticktock.getDOY
         ~Ticktock.getGPS
@@ -189,10 +327,12 @@ class Ticktock(MutableSequence):
         ~Ticktock.isoformat
         ~Ticktock.now
         ~Ticktock.sort
+        ~Ticktock.today
         ~Ticktock.update_items
     .. automethod:: append
     .. automethod:: argsort
     .. automethod:: convert
+    .. automethod:: getAPT
     .. automethod:: getCDF
     .. automethod:: getDOY
     .. automethod:: getGPS
@@ -208,14 +348,19 @@ class Ticktock(MutableSequence):
     .. automethod:: isoformat
     .. automethod:: now
     .. automethod:: sort
+    .. automethod:: today
     .. automethod:: update_items
+
     """
     _keylist = ['UTC', 'TAI', 'ISO', 'JD', 'MJD', 'UNX', 'RDT', 'CDF', 'GPS', 'DOY', 'eDOY', 'leaps']
+    if HAVE_ASTROPY:
+        _keylist.append('APT')
     _keylist_upper = [key.upper() for key in _keylist]
     _isoformatstr = {'seconds': '%Y-%m-%dT%H:%M:%S', 'microseconds': '%Y-%m-%dT%H:%M:%S.%f'}
 
-    def __init__(self, data, dtype=None):
-        self._isofmt = Ticktock._isoformatstr['seconds']
+    def __init__(self, data, dtype=None, isoformat=None):
+
+        self._isofmt = isoformat or self._isoformatstr['seconds']
 
         if isinstance(data, Ticktock):
             dtype = data.data.attrs['dtype']
@@ -229,10 +374,18 @@ class Ticktock(MutableSequence):
                 self.data = spacepy.datamodel.dmarray(data)
 
             if not isinstance(dtype, Callable):
-                if isinstance(self.data[0], str):
+                if isinstance(self.data[0], (str, bytes)):
+                    dtype = 'ISO'
+                elif str is bytes and isinstance(self.data[0], unicode): #Py2k
                     dtype = 'ISO'
                 elif isinstance(self.data[0], datetime.datetime):
                     dtype = 'UTC'
+                elif HAVE_ASTROPY and isinstance(self.data[0],
+                                                 astropy.time.Time):
+                    dtype = 'APT'
+                    # Recover original input (not dmarray), add axis if scalar
+                    self.data = astropy.time.Time([data]) if data.shape == ()\
+                                else data
                 elif self.data[0] > 1e13:
                     dtype = 'CDF'
                 elif dtype is None:
@@ -245,14 +398,16 @@ class Ticktock(MutableSequence):
                 dtype_func = np.vectorize(dtype)
                 self.data = dtype_func(self.data)
                 self.UTC = no_tzinfo(self.data)
-
+        # AstroPy time objects don't have attrs, but will accept one.
+        if not hasattr(self.data, 'attrs'):
+            self.data.attrs = {}
         try:
             self.data.attrs['dtype'] = dtype.upper()
         except AttributeError:
             self.data.attrs['dtype'] = str(dtype_func)
         else:
-            if dtype.upper() == 'ISO': self.ISO = self.data
-            self.update_items(self, 'data')
+            # ISO is populated by update_items
+            self.update_items('data')
             if dtype.upper() == 'TAI':
                 self.TAI = self.data
             elif dtype.upper() == 'JD':
@@ -267,6 +422,8 @@ class Ticktock(MutableSequence):
                 self.CDF = self.data
             elif dtype.upper() == 'UTC':
                 self.UTC = no_tzinfo(self.data)
+            elif dtype.upper() == 'APT':
+                self.APT = self.data
 
             ## Brian and Steve were looking at this to see about making plot work directly on the object
             ## is also making iterate as an array of datetimes
@@ -377,7 +534,7 @@ class Ticktock(MutableSequence):
             self.data[idx] = tmp.__getattribute__(self.data.attrs['dtype'])[:]
         else:
             self.data[idx] = tmp.__getattribute__(self.data.attrs['dtype'])[0]
-        self.update_items(self, 'data')
+        self.update_items('data')
 
     # -----------------------------------------------
     def __delitem__(self, idx):
@@ -387,7 +544,7 @@ class Ticktock(MutableSequence):
         will be called when deleting items in the sequence
         """
         self.data = np.delete(self.data, idx)
-        self.update_items(self, 'data')
+        self.update_items('data')
 
     # -----------------------------------------------
     def __len__(self):
@@ -588,8 +745,11 @@ class Ticktock(MutableSequence):
 
 
         """
-        assert name in Ticktock._keylist, "data type " + str(name) + " not provided, only " + str(Ticktock._keylist)
+        if name not in Ticktock._keylist:
+            raise AttributeError("data type {} not provided, only {}".format(
+                str(name), str(Ticktock._keylist)))
         if name.upper() == 'TAI': self.TAI = self.getTAI()
+        if name.upper() == 'UTC': self.UTC = self.getUTC()
         if name.upper() == 'ISO': self.ISO = self.getISO()
         if name.upper() == 'JD': self.JD = self.getJD()
         if name.upper() == 'MJD': self.MJD = self.getMJD()
@@ -599,6 +759,7 @@ class Ticktock(MutableSequence):
         if name.upper() == 'DOY': self.DOY = self.getDOY()
         if name.upper() == 'EDOY': self.eDOY = self.geteDOY()
         if name.upper() == 'GPS': self.GPS = self.getGPS()
+        if name.upper() == 'APT': self.APT = self.getAPT()
         # if name == 'isoformat': self.__isofmt = self.isoformat()
         if name == 'leaps': self.leaps = self.getleapsecs()
         return getattr(self, name)
@@ -628,7 +789,7 @@ class Ticktock(MutableSequence):
         ival = getattr(dum, fmt)
         self.data = np.insert(self.data, idx, ival)
 
-        self.update_items(self, 'data')
+        self.update_items('data')
 
     # -----------------------------------------------
     def remove(self, idx):
@@ -644,18 +805,24 @@ class Ticktock(MutableSequence):
         """
         a.sort()
 
-        This will sort the Ticktock values in place, if you need a stable sort use kind='mergesort'
+        This will sort the Ticktock values in place based on the values
+        in `data`. If you need a stable sort use kind='mergesort'
+
+        Other Parameters
+        ================
+        kind : str
+            Sort algorithm to use, default 'quicksort'.
+
+        See Also
+        ========
+        argsort, numpy.argsort
         """
-        RDT = self.RDT
-        # TODO does this not being stable matter? to make stable use kind='mergesort'
-        RDTsorted = np.sort(RDT, kind=kind)
-        tmp = Ticktock(RDTsorted, 'RDT').convert(self.data.attrs['dtype'])
-        self.data = tmp.data
-        self.update_items(self, 'data')
-        return
+        idx = self.argsort(kind=kind)
+        self.data = self.data[idx]
+        self.update_items('data')
 
     # -----------------------------------------------
-    def argsort(self, kind='mergesort'):
+    def argsort(self, kind='quicksort'):
         """
         idx = a.argsort()
 
@@ -666,10 +833,20 @@ class Ticktock(MutableSequence):
         out : list
             indices that would sort the Ticktock values
 
+        Other Parameters
+        ================
+        kind : str, optional
+            Sort algorithm to use, default 'quicksort'.
+
+            .. versionchanged:: 0.2.2
+                Default is now 'quicksort' to match numpy default;
+                previously was 'mergesort'.
+
+        See Also
+        ========
+        argsort, numpy.argsort
         """
-        RDT = self.RDT
-        idx = np.argsort(RDT, kind=kind)
-        return idx
+        return np.argsort(self.TAI, kind=kind)
 
     # -----------------------------------------------
     def isoformat(self, fmt=None):
@@ -689,24 +866,31 @@ class Ticktock(MutableSequence):
         else:
             try:
                 self._isofmt = Ticktock._isoformatstr[fmt]
-                self.update_items(self, 'data')
+                self.update_items('data')
             except KeyError:
                 raise (ValueError('Not a valid option: Use {0}'.format(list(Ticktock._isoformatstr.keys()))))
 
     # -----------------------------------------------
-    def update_items(self, cls, attrib):
+    def update_items(self, attrib, cls=None):
         """
-        a.update_items(b, attrib)
+        a.update_items(attrib)
 
         After changing the self.data attribute by either __setitem__ or __add__ etc
         this function will update all other attributes. This function is
-        called automatically in __add__ and __setitem__
+        called automatically in __add__, __init__, and __setitem__.
 
         Parameters
         ==========
-        cls : Ticktock
-        attrib : string
-            attribute to update
+        attrib : str
+            attribute that was updated; update others from this
+
+        Other Parameters
+        ================
+        cls : type
+            .. deprecated:: 0.2.2
+                Class is now taken from the ``self`` of the bound instance.
+
+            Class to use for finding possible attributes; now ignored.
 
         See Also
         ========
@@ -714,14 +898,43 @@ class Ticktock(MutableSequence):
         spacepy.Ticktock.__add__
         spacepy.Ticktock.__sub__
         """
-        keylist = list(cls.__dict__.keys())
-        # keylist.remove('dtype')
+        keylist = dir(self)
+        # Formerly took arguments (cls, attrib) but there's nothing from
+        # the class we can't get from the instance, so removed cls.
+        # If we got two position arguments, though, that indicates the cls
+        if cls is not None:
+            attrib = cls
+            warnings.warn(
+                'cls argument of update_items was deprecated in 0.2.2'
+                ' and will be ignored.',
+                DeprecationWarning)
         keylist.remove('data')
-        if attrib is not 'data': keylist.remove(attrib)
-
-        self.UTC = self.getUTC()
+        if attrib != 'data':
+            keylist.remove(attrib)
+            attrib = attrib.upper()
+            if attrib != self.data.attrs['dtype']:
+                # Repopulating based on a different dtype, so make a temp
+                # Ticktock to do the conversion.
+                cls = type(self)
+                dt = self.data.attrs['dtype']
+                self.data = getattr(
+                    cls(getattr(self, attrib), dtype=attrib), dt)
+        if self.data.attrs['dtype'] in (
+                'TAI', 'GPS', 'JD', 'MJD', 'RDT', 'CDF', 'UNX', 'ISO', 'APT'):
+            if self.data.attrs['dtype'] == 'ISO':
+                if 'UTC' in keylist:
+                    del self.UTC # Force recalc of UTC in TAI calc
+                if 'ISO' in keylist:
+                    del self.ISO # Also will recalc the ISO
+                    del keylist[keylist.index('ISO')] # So no need to calc again
+            self.TAI = self.getTAI()
+            if 'UTC' in keylist and self.data.attrs['dtype'] != 'ISO':
+                self.UTC = self.getUTC()
+        else:
+            self.UTC = self.getUTC()
+            if 'TAI' in keylist:
+                self.TAI = self.getTAI()
         for key in keylist:
-            if key.upper() == 'TAI': self.TAI = self.getTAI()
             if key.upper() == 'ISO': self.ISO = self.getISO()
             if key.upper() == 'JD': self.JD = self.getJD()
             if key.upper() == 'MJD': self.MJD = self.getMJD()
@@ -729,8 +942,9 @@ class Ticktock(MutableSequence):
             if key.upper() == 'RDT': self.RDT = self.getRDT()
             if key.upper() == 'CDF': self.CDF = self.getCDF()
             if key.upper() == 'DOY': self.DOY = self.getDOY()
-            if key.upper() == 'eDOY': self.eDOY = self.geteDOY()
+            if key.upper() == 'EDOY': self.eDOY = self.geteDOY()
             if key.upper() == 'GPS': self.GPS = self.getGPS()
+            if key.upper() == 'APT': self.APT = self.getAPT()
             if key == 'leaps': self.leaps = self.getleapsecs()
 
         return
@@ -790,16 +1004,25 @@ class Ticktock(MutableSequence):
         """
         a.getCDF() or a.CDF
 
-        Return CDF time which is milliseconds since 01-Jan-0000 00:00:00.000.
-        "Year zero" is a convention chosen by NSSDC to measure epoch values.
-        This date is more commonly referred to as 1 BC. Remember that 1 BC was a leap year.
-        The CDF date/time calculations do not take into account the changes to the Gregorian
-        calendar, and cannot be directly converted into Julian date/times.
+        Return CDF Epoch time which is milliseconds since 0000-1-1 at
+        00:00:00.000. "Year zero" is a convention chosen by NSSDC to measure
+        epoch values. This date is more commonly referred to as 1 BC and is
+        considered a leap year.
+
+        The CDF date/time calculations do not take into account the change
+        to the Gregorian calendar or leap seconds, and cannot be directly
+        converted into Julian date/times.
+
+        Returns ``data`` if it was provided in CDF; otherwise always
+        recalculates from the current value of ``TAI``, which will be
+        created if necessary.
+
+        Updates the ``CDF`` attribute.
 
         Returns
         =======
         out : numpy array
-            days elapsed since Jan. 1st
+            milliseconds since 0000-01-01T00:00:00 assuming no discontinuities.
 
         Examples
         ========
@@ -818,10 +1041,16 @@ class Ticktock(MutableSequence):
         getTAI
         getDOY
         geteDOY
+        getAPT
         """
-        RDTdata = self.getRDT()
-        CDF = RDTdata * 86400000.0 + 86400000.0 * 365.0
-        self.CDF = CDF
+        if self.data.attrs['dtype'] == 'CDF':
+            # This should be the case from the constructor
+            self.CDF = self.data
+            return self.CDF
+        CDFofTAI0 = 61788528000000.
+        naive_tai = _tai_real_to_naive(self.TAI)
+        cdf = naive_tai * 1e3 + CDFofTAI0
+        self.CDF = spacepy.datamodel.dmarray(cdf, attrs={'dtype': 'CDF'})
         return self.CDF
 
     # -----------------------------------------------
@@ -830,6 +1059,11 @@ class Ticktock(MutableSequence):
         a.DOY or a.getDOY()
 
         extract DOY (days since January 1st of given year)
+
+        Always recalculates from the current value of ``UTC``, which will
+        be created if necessary.
+
+        Updates the ``DOY`` attribute.
 
         Returns
         =======
@@ -853,6 +1087,7 @@ class Ticktock(MutableSequence):
         getTAI
         getDOY
         geteDOY
+        getAPT
         """
         DOY = [utc.toordinal() - datetime.date(utc.year, 1, 1).toordinal() + 1 for utc in self.UTC]
         self.DOY = spacepy.datamodel.dmarray(DOY, attrs={'dtype': 'DOY'}).astype(int)
@@ -864,6 +1099,11 @@ class Ticktock(MutableSequence):
         a.eDOY or a.geteDOY()
 
         extract eDOY (elapsed days since midnight January 1st of given year)
+
+        Always recalculates from the current value of ``UTC``, which will
+        be created if necessary.
+
+        Updates the ``eDOY`` attribute.
 
         Returns
         =======
@@ -887,6 +1127,7 @@ class Ticktock(MutableSequence):
         getTAI
         getDOY
         geteDOY
+        getAPT
         """
 
         eDOY = [utc.toordinal() - datetime.date(utc.year, 1, 1).toordinal() for utc in self.UTC]
@@ -903,10 +1144,27 @@ class Ticktock(MutableSequence):
 
         convert dtype data into Julian Date (JD)
 
+        Returns ``data`` if it was provided in JD; otherwise always
+        recalculates from the current value of ``TAI``, which will be
+        created if necessary.
+
+        Updates the ``JD`` attribute.
+
         Returns
         =======
         out : numpy array
-            elapsed days since 12:00 January 1, 4713 BC
+            elapsed days since 4713 BCE 01-01T12:00
+
+        Notes
+        =====
+        This is based on the UTC day, defined as JD(UTC),
+        per the recommendation
+        of `IAU General Assembly XXIII resolution B1
+        <https://www.iers.org/IERS/EN/Science/Recommendations/
+        resolutionB1.html>`_.
+        Julian days with leapseconds are 86401 seconds long and each second
+        is a smaller fraction of the day. Note this "stretching" is across
+        the *Julian* Day, noon to noon.
 
         Examples
         ========
@@ -925,63 +1183,15 @@ class Ticktock(MutableSequence):
         getTAI
         getDOY
         geteDOY
+        getAPT
         """
-        import decimal
-
-        nTAI = len(self.data)
-
-        # convert all types in to UTC first and call again
-        UTCdata = self.UTC
-
-        if UTCdata[0] < datetime.datetime(1582, 10, 15):
-            warnings.warn("Calendar date before the switch from Julian to Gregorian\n" +
-                          "    Calendar 1582-Oct-15: Use Julian Calendar dates as input")
-
-        # include offset if given
-        JD = spacepy.datamodel.dmarray(np.zeros(nTAI), attrs={'dtype': 'JD'})
-
-        twelve, twofour, mind = decimal.Decimal('12.0'), decimal.Decimal('24.0'), decimal.Decimal('1440.0')
-        sind, usind = decimal.Decimal('86400.0'), decimal.Decimal('86400000000.0')
-
-        for i in np.arange(nTAI):
-            offset = UTCdata[i].utcoffset()
-            if offset:
-                UTCdata[i] = UTCdata[i] - offset
-
-            # extract year, month, day
-            Y = int(UTCdata[i].year)
-            M = int(UTCdata[i].month)
-            D = int(UTCdata[i].day)
-
-            # the following is from Wikipedia (but is wrong by 2 days)
-            # JDN = D-32075+1461*(Y+4800+(M-14)/12)/4+367*(M-2-(M-14)/12*12)/12-3*((Y+4900+(M-14)/12)/100)/4
-            # JD = JDN + (data.hour-12)/24. + data.minute/1440. + data.second/86400.
-
-            # following Press, "Numerical Recipes", Fct: JULDAY, p. 10
-            igreg = 15 + 31 * (10 + 12 * 1582)
-            if M > 2:
-                JY = Y
-                JM = M + 1
-            else:
-                JY = Y - 1
-                JM = M + 13
-            JD[i] = int(365.25 * JY) + int(30.6001 * JM) + D + 1720995
-            c_val = (D + 31 * (M + 12 * Y))
-            if c_val >= igreg:  # yes if date after the Gregorian Switch in 1582-Oct-15
-                JA = int(0.01 * JY)
-                JD[i] = JD[i] + 2 - JA + int(0.25 * JA)
-
-            # add this to num.recipes to get fractional days
-            # twelve, twofour, mind = decimal.Decimal('12.0'), decimal.Decimal('24.0'), decimal.Decimal('1440.0')
-            # sind, usind = decimal.Decimal('86400.0'), decimal.Decimal('86400000000.0')
-            JD[i] = decimal.Decimal(str(JD[i])) + (decimal.Decimal(str(UTCdata[i].hour)) - twelve) / twofour + \
-                    decimal.Decimal(str(UTCdata[i].minute / 1440.)) + (decimal.Decimal(str(UTCdata[i].second)) / sind) + \
-                    (decimal.Decimal(str(UTCdata[i].microsecond)) / usind)
-            JD[i] = float(JD[i])
-            # JD[i] = JD[i] + (UTCdata[i].hour-12)/24. + UTCdata[i].minute/1440. + \
-            # UTCdata[i].second/86400. + UTCdata[i].microsecond/86400000000.
-
-        self.JD = JD
+        if self.data.attrs['dtype'] == 'JD':
+            # This should be the case from the constructor
+            self.JD = self.data
+            return self.JD
+        # 1958-01-01T12:00 is JD 2436205.0
+        JDofTAI0 = 2436205.0 # Days-since-1958 is relative to noon
+        self.JD = _days1958(self.TAI, leaps='rubber') + JDofTAI0
         return self.JD
 
     # -----------------------------------------------
@@ -991,30 +1201,53 @@ class Ticktock(MutableSequence):
 
         convert dtype data into MJD (modified Julian date)
 
+        Returns ``data`` if it was provided in MJD; otherwise always
+        recalculates from the current value of ``TAI`` which will be
+        created if necessary.
+
+        Updates the ``MJD`` attribute.
+
         Returns
         ========
         out : numpy array
-            elapsed days since November 17, 1858 (Julian date was 2,400 000)
+            elapsed days since 1858-11-17T00:00
+            (Julian date of 1858-11-17T12:00 was 2 400 000)
+
+        Notes
+        =====
+        This is based on the UTC day, defined as JD(UTC) - 2 400 000.5,
+        per the recommendation
+        of `IAU General Assembly XXIII resolution B1
+        <https://www.iers.org/IERS/EN/Science/Recommendations/
+        resolutionB1.html>`_.
+        Julian days with leapseconds are 86401 seconds long and each second
+        is a smaller fraction of the day. Note this "stretching" is across
+        the *Julian* Day not the MJD, so it will affect the last half of
+        the MJD before the leap second and the first half of the following
+        MJD, so that MJD is always JD - 2 400 000.5 This also means that
+        the MJD following a leap second does not begin exactly at midnight.
 
         Examples
         ========
         >>> a = Ticktock('2002-02-02T12:00:00', 'ISO')
         >>> a.MJD
         array([ 52307.5])
+        >>> a = Ticktock('2009-01-01T00:00:00', 'ISO')
+        >>> a.MJD
+        array([ 54832.00000579])
 
         See Also
         ========
-        getUTC, getUNX, getRDT, getJD, getISO, getCDF, getTAI, getDOY, geteDOY
-
+        getUTC, getUNX, getRDT, getJD, getISO, getCDF, getTAI, getDOY, geteDOY,
+        getAPT
         """
+        if self.data.attrs['dtype'] == 'MJD':
+            # This should be the case from the constructor
+            self.MJD = self.data
+            return self.MJD
 
-        if self.UTC[0] < datetime.datetime(1582, 10, 15):
-            warnings.warn("WARNING: Calendar date before the switch from Julian to Gregorian\n" +
-                          "Calendar 1582-Oct-15: Use Julian Calendar dates as input")
-
-        MJD = self.JD - 2400000.5
-
-        self.MJD = MJD
+        # 1958-01-01T12:00 is MJD 36204.5 (days since 1858-11-17T00:00)
+        self.MJD = _days1958(self.TAI, leaps='rubber') + 36204.5
         return self.MJD
 
     # -----------------------------------------------
@@ -1023,12 +1256,18 @@ class Ticktock(MutableSequence):
         a.UNX or a.getUNX()
 
         convert dtype data into Unix Time (Posix Time)
-        seconds since 1970-Jan-1 (not counting leap seconds)
+        seconds since 1970-1-1 (not counting leap seconds)
+
+        Returns ``data`` if it was provided in UNX; otherwise always
+        recalculates from the current value of ``TAI``, which will be
+        created if necessary.
+
+        Updates the ``UNX`` attribute.
 
         Returns
         ========
         out : numpy array
-            elapsed secs since 1970/1/1 (not counting leap secs)
+            elapsed secs since 1970-1-1 (not counting leap secs)
 
         Examples
         ========
@@ -1038,14 +1277,18 @@ class Ticktock(MutableSequence):
 
         See Also
         =========
-        getUTC, getISO, getRDT, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY
-
+        getUTC, getISO, getRDT, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY,
+        getAPT
         """
-        UNX0 = datetime.datetime(1970, 1, 1)
-        d = [utc - UNX0 for utc in self.UTC]
-        UNX = [dd.days * 86400 + dd.seconds + dd.microseconds / 1.e6 for dd in d]
+        if self.data.attrs['dtype'] == 'UNX':
+            # This should be the case from the constructor
+            self.UNX = self.data
+            return self.UNX
+        naive_tai = _tai_real_to_naive(self.TAI)
+        UNXofTAI0 = -378691200.
+        unx = naive_tai + UNXofTAI0
 
-        self.UNX = spacepy.datamodel.dmarray(UNX, attrs={'dtype': 'UNX'})
+        self.UNX = spacepy.datamodel.dmarray(unx, attrs={'dtype': 'UNX'})
         return self.UNX
 
     # -----------------------------------------------
@@ -1053,12 +1296,22 @@ class Ticktock(MutableSequence):
         """
         a.RDT or a.RDT()
 
-        convert dtype data into Rata Die (lat.) Time (days since 1/1/0001)
+        convert dtype data into Rata Die (lat.) Time, or elapsed days
+        counting 0001-01-01 as day 1. This is a naive conversion: it
+        ignores the existence of leapseconds for fractional days and
+        ignores the conversion from Julian to Gregorian calendar, i.e.
+        it assumes Gregorian calendar infinitely into the past.
+
+        Returns ``data`` if it was provided in RDT; otherwise always
+        recalculates from the current value of ``TAI``, which will be
+        created if necessary.
+
+        Updates the ``RDT`` attribute.
 
         Returns
         ========
         out : numpy array
-            elapsed days since 1/1/1
+            elapsed days counting 1/1/1 as day 1.
 
         Examples
         ========
@@ -1068,19 +1321,22 @@ class Ticktock(MutableSequence):
 
         See Also
         =========
-        getUTC, getUNX, getISO, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY
-
+        getUTC, getUNX, getISO, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY,
+        getAPT
         """
-        from matplotlib.dates import date2num
+        if self.data.attrs['dtype'] == 'RDT':
+            # This should be the case from the constructor
+            self.RDT = self.data
+            return self.RDT
 
-        # This is how to do this without date2num
-        # nTAI = len(self.data)
-        # RDT = np.zeros(nTAI)
-        # for i in np.arange(nTAI):
-        # RDT[i] = UTC[i].toordinal() + UTC[i].hour/24. + UTC[i].minute/1440. + \
-        # UTC[i].second/86400. + UTC[i].microsecond/86400000000.
+        # RDT date at 1958-1-1T00
+        RDTTAI0 = 714780.0
+        RDT = _days1958(self.TAI, leaps='drop', midnight=True) + RDTTAI0
+        # RDT can represent 1582-10-5 through 1582-10-14, which do not exist.
+        # So everything before 1582-10-15 (RDT day 577736) is ten days earlier.
+        RDT[RDT < 577736.0] -= 10
 
-        self.RDT = spacepy.datamodel.dmarray(date2num(self.UTC), attrs={'dtype': 'RDT'})
+        self.RDT = spacepy.datamodel.dmarray(RDT, attrs={'dtype': 'RDT'})
         return self.RDT
 
     # -----------------------------------------------
@@ -1089,6 +1345,17 @@ class Ticktock(MutableSequence):
         a.UTC or a.getUTC()
 
         convert dtype data into UTC object a la datetime()
+
+        Return value comes from (in priority order):
+
+            1. If ``data`` was provided in UTC, returns ``data``.
+            2. Else recalculates directly from ``data`` if it was
+               provided in ISO.
+            3. Else calculates from current value of ``TAI``, which
+               will be created if necessary. (``data`` is TAI, GPS,
+               JD, MJD, RDT, CDF, UNX)).
+
+        Updates the ``UTC`` attribute.
 
         Returns
         ========
@@ -1103,11 +1370,9 @@ class Ticktock(MutableSequence):
 
         See Also
         =========
-        getISO, getUNX, getRDT, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY
-
+        getISO, getUNX, getRDT, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY,
+        getAPT
         """
-        from matplotlib.dates import num2date
-
         nTAI = len(self.data)
 
         # if already UTC, we are done, no conversion
@@ -1116,124 +1381,30 @@ class Ticktock(MutableSequence):
 
         elif self.data.attrs['dtype'].upper() == 'ISO':
             self.ISO = self.data
-            # try a few special cases that are faster than dateutil.parser
-            try:
-                UTC = [datetime.datetime.strptime(isot, '%Y-%m-%dT%H:%M:%S') for isot in self.data]
-            except ValueError:
-                try:
-                    UTC = [datetime.datetime.strptime(isot, '%Y-%m-%dT%H:%M:%SZ') for isot in self.data]
-                except ValueError:
-                    try:
-                        UTC = [datetime.datetime.strptime(isot, '%Y-%m-%d') for isot in self.data]
-                    except ValueError:
-                        try:
-                            UTC = [datetime.datetime.strptime(isot, '%Y%m%d') for isot in self.data]
-                        except ValueError:
-                            try:
-                                UTC = [datetime.datetime.strptime(isot, '%Y%m%d %H:%M:%S') for isot in self.data]
-                            except ValueError:
-                                UTC = [dup.parse(isot) for isot in self.data]
+            _, UTC, _ = dtstr2iso(self.data, fmt=self._isofmt)
 
-        elif self.data.attrs['dtype'].upper() == 'TAI':
-            self.TAI = self.data
+        elif self.data.attrs['dtype'].upper() in (
+                'TAI', 'GPS', 'JD', 'MJD', 'RDT', 'CDF', 'UNX', 'APT'):
             TAI0 = datetime.datetime(1958, 1, 1, 0, 0, 0, 0)
-            UTC = [datetime.timedelta(seconds=float(tait)) + TAI0 for tait in self.data]
-            # add leap seconds after UTC is created
-            self.UTC = UTC
-            leapsecs = self.getleapsecs()
+            UTC = [datetime.timedelta(
+                # Before 1582-10-15, UTC 10 days earlier than naive conversion
+                # since those dates are Julian not Gregorian.
+                seconds=float(tait - (864000 if tait < -11840601600.0 else 0)))
+                   + TAI0 for tait in self.TAI]
             for i in np.arange(nTAI):
-                self.UTC[i] = UTC[i] - datetime.timedelta(seconds=float(leapsecs[i]))
-                tmpleaps = Ticktock(self.UTC[i]).leaps
-                if tmpleaps == leapsecs[i] - 1: self.UTC[i] = self.UTC[i] + datetime.timedelta(seconds=1)
-
-        elif self.data.attrs['dtype'].upper() == 'GPS':
-            self.GPS = self.data
-            GPS0 = datetime.datetime(1980, 1, 6, 0, 0, 0, 0)
-            UTC = [datetime.timedelta(seconds=float(gpst)) + GPS0 for gpst in self.data]
-            # add leap seconds after UTC is created
-            self.UTC = UTC
-            leapsecs = self.getleapsecs()
-            for i in np.arange(nTAI):
-                # there were 18 leap seconds before gps zero, need the -18 for that
-                self.UTC[i] = UTC[i] - datetime.timedelta(seconds=float(leapsecs[i])) + \
-                              datetime.timedelta(seconds=19)
-
-        elif self.data.attrs['dtype'].upper() == 'UNX':
-            self.UNX = self.data
-            UNX0 = datetime.datetime(1970, 1, 1)
-            UTC = [datetime.timedelta(seconds=unxt) + UNX0 for unxt in self.data]
-
-        elif self.data.attrs['dtype'].upper() == 'RDT':
-            self.RDT = self.data
-            UTC = num2date(self.data)
-            UTC = no_tzinfo(UTC)
-            # for i in np.arange(nTAI):
-            # UTC[i] = datetime.datetime(1,1,1) + \
-            # datetime.timedelta(days=np.floor(self.data[i])-1) +  \
-            # datetime.timedelta(microseconds=(self.data[i] - \
-            # self.data[i])*86400000.)
-            # roundoff the microseconds
-            # UTC[i] = UTC[i] - datetime.timedelta(microseconds=UTC[i].microsecond)
-
-        elif self.data.attrs['dtype'].upper() == 'CDF':
-            self.CDF = self.data
-            UTC = [datetime.timedelta(days=cdft / 86400000.) +
-                   datetime.datetime(1, 1, 1) - datetime.timedelta(days=366) for cdft in self.data]
-            # UTC[i] = datetime.timedelta(days=np.floor(self.data[i]/86400000.), \
-            # milliseconds=np.mod(self.data[i],86400000)) + \
-            # datetime.datetime(1,1,1) - datetime.timedelta(days=366)
-            # the following has round off errors
-            # UTC[i] = datetime.timedelta(data[i]/86400000.-366) + datetime.datetime(1,1,1)
-
-        elif self.data.attrs['dtype'].upper() in ['JD', 'MJD']:
-            if self.data.attrs['dtype'].upper() == 'MJD':
-                self.JD = self.data + 2400000.5
-                self.MJD = self.data
-            else:
-                self.JD = self.data
-            UTC = [''] * nTAI
-            for i in np.arange(nTAI):
-                # extract partial days
-                ja = int(np.floor(self.JD[i]))
-                p = self.JD[i] - np.floor(self.JD[i])
-                # after Press: "Numerical Recipes"
-                # http://www.rgagnon.com/javadetails/java-0506.html
-                # only good for after 15-Oct-1582
-                igreg = 15 + 31 * (10 + 12 * 1582)
-                if ja >= igreg:  # after switching to Gregorian Calendar
-                    jalpha = int(((ja - 1867216) - 0.25) / 36524.25)
-                    ja = ja + 1 + jalpha - jalpha // 4
-
-                jb = ja + 1524
-                jc = int(6680.0 + ((jb - 2439870) - 122.1) / 365.25)
-                jd = 365 * jc + jc // 4
-                je = int((jb - jd) / 30.6001)
-                day = jb - jd - int(30.6001 * je)
-                month = je - 1
-                if (month > 12): month = month - 12
-                year = jc - 4715
-                if (month > 2): year = year - 1
-                if (year <= 0): year = year - 1
-
-                # after http://aa.usno.navy.mil/faq/docs/JD_Formula.php
-                # also good only for after 1582-Oct-15
-                # L= JD+68569
-                # N= 4*L/146097
-                # = L-(146097*N+3)/4
-                # I= 4000*(L+1)/1461001
-                # L= L-1461*I/4+31
-                # J= 80*L/2447
-                # K= L-2447*J/80
-                # L= J/11
-                # J= J+2-12*L
-                # I= 100*(N-49)+I+L
-
-                UTC[i] = datetime.datetime(year, month, int(day)) + \
-                         datetime.timedelta(hours=12) + \
-                         datetime.timedelta(seconds=p * 86400)
-                if UTC[i] < datetime.datetime(1582, 10, 15):
-                    warnings.warn("WARNING: Calendar date before the switch from Julian to Gregorian\n" +
-                                  "Calendar 1582-Oct-15: Use Julian Calendar dates as input")
+                # This is the index of number of seconds to subtract from
+                # "naive" UTC, not just TAI - UTC.
+                # TAI of leap second does not have a new TAI - UTC, this
+                # is because UTC seconds = 60, but need to subtract off
+                # one more to make the UTC seconds = 59 in that case, thus
+                # "flip" to next leap second count 1s earlier.
+                idx = np.searchsorted(TAIleaps, self.TAI[i], side='right') - 1
+                UTC[i] = UTC[i] - datetime.timedelta(seconds=secs[idx]
+                                                          if idx > 0 else 0)
+                if int(self.TAI[i]) == TAIleaps[idx]:
+                    # TAI is in leap second
+                    UTC[i] = UTC[i].replace(
+                        second=59, microsecond=999999)
 
         else:
             warnstr1 = 'Input data type {0} does not support calculation of UTC times'.format(self.data.attrs['dtype'])
@@ -1241,53 +1412,128 @@ class Ticktock(MutableSequence):
                 ', '.join([kk for kk in Ticktock._keylist if kk not in ['DOY', 'eDOY', 'leaps']]))
             raise TypeError('{0}\n{1}'.format(warnstr1, warnstr2))
 
-        UTC = spacepy.datamodel.dmarray(UTC, attrs={'dtype': 'UTC'})
-        self.UTC = no_tzinfo(UTC)
-        return no_tzinfo(self.UTC)
+        self.UTC = spacepy.datamodel.dmarray(UTC, attrs={'dtype': 'UTC'})
+        return self.UTC
 
     # -----------------------------------------------
     def getGPS(self):
         """
         a.GPS or a.getGPS()
 
-        return GPS epoch (0000 UT (midnight) on January 6, 1980)
+        Return seconds since the GPS epoch (1980-1-6T00:00 UT)
+
+        Always recalculates from the current value of ``TAI``, which
+        will be created if necessary.
+
+        Updates the ``GPS`` attribute.
 
         Returns
         ========
             out : numpy array
-                elapsed secs since 6Jan1980 (excludes leap secs)
+                elapsed secs since 1980-1-6. Leap seconds are counted;
+                i.e. there are no discontinuities.
 
         Examples
         ========
         >>> a = Ticktock('2002-02-02T12:00:00', 'ISO')
         >>> a.GPS
-        array([])
+        dmarray([6.96686413e+08])
 
         See Also
         =========
-        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getISO, getDOY, geteDOY
-
+        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getISO, getDOY, geteDOY,
+        getAPT
         """
-        GPS0 = datetime.datetime(1980, 1, 6, 0, 0, 0, 0)
-        leapsec = self.getleapsecs()
-
-        GPStup = [utc - GPS0 + datetime.timedelta(seconds=int(ls)) - datetime.timedelta(seconds=19)
-                  for utc, ls in zip(self.UTC, leapsec)]
-        GPS = [gps.days * 86400 + gps.seconds + gps.microseconds / 1.e6 for gps in GPStup]
-        self.GPS = spacepy.datamodel.dmarray(GPS, attrs={'dtype': 'GPS'})  # .astype(int)
+        if self.data.attrs['dtype'] == 'GPS':
+            # This should be the case from the constructor
+            self.GPS = self.data
+            return self.GPS
+        GPS0 = 694656019
+        self.GPS = spacepy.datamodel.dmarray(
+            self.TAI - GPS0, attrs={'dtype': 'GPS'})
         return self.GPS
+
+    # -----------------------------------------------
+    def getAPT(self):
+        """
+        a.APT or a.getAPT()
+
+        Return AstroPy time object.
+
+        Always recalculates from the current value of ``TAI``, which
+        will be created if necessary.
+
+        Updates the ``APT`` attribute.
+
+        Returns
+        ========
+            out : astropy.time.Time
+                AstroPy Time object
+
+        Notes
+        =====
+        .. versionadded:: 0.2.2
+
+        Requires AstroPy 1.0. The returned value will be on the ``tai``
+        scale in ``gps`` format (unless the :class:`Ticktock` was created
+        from a :class:`~astropy.time.Time` object, in which case it will
+        be the original input.) See the :mod:`astropy.time` docs for
+        conversion to other scales and formats.
+
+        Examples
+        ========
+        >>> a = Ticktock('2002-02-02T12:00:00', 'ISO')
+        >>> a.APT
+        <Time object: scale='tai' format='gps' value=696686413.0>
+
+        See Also
+        =========
+        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getISO, getDOY, geteDOY,
+        getGPS
+        """
+        if self.data.attrs['dtype'] == 'APT':
+            # This should be the case from the constructor
+            self.APT = self.data
+            return self.APT
+        if not HAVE_ASTROPY:
+            raise RuntimeError('Import of astropy.time failed.')
+        GPS0 = 694656019
+        self.APT = astropy.time.Time(
+            self.TAI - GPS0, scale='tai', format='gps')
+        self.APT.attrs = {'dtype': 'APT'}
+        return self.APT
 
     # -----------------------------------------------
     def getTAI(self):
         """
         a.TAI or a.getTAI()
 
-        return TAI (International Atomic Time)
+        return TAI (International Atomic Time), elapsed secs since 1958-1-1
+        (leap seconds are counted.) Ticktock's handling of TAI and UTC
+        conversions treats the UTC second as always equal in length to the SI
+        second (and thus TAI), ignoring frequency changes and fractional
+        leap seconds from 1958 through 1972, i.e. the UTC to TAI offset
+        is always treated as an integer, truncated (not rounded) from the
+        value at the most recent leap second (or fraction thereof).
+
+        Return value comes from (in priority order):
+
+            1. If ``data`` was provided in TAI, returns ``data``.
+            2. Else recalculates directly from ``data`` if it was
+               provided in APT, CDF, GPS, ISO, JD, MJD, RDT, or UNX.
+            3. Else calculates from current value of ``UTC``, which
+               will be created if necessary.
+
+        Updates the ``TAI`` attribute; will also create the ``UTC``
+        and ``ISO`` attributes from ``data`` if input is in ``ISO``
+        (but will not overwrite an existing ``ISO`` or ``UTC``). This is
+        for efficiency, as computation from ISO requires calculating UTC
+        and makes creating a formatted ISO string easy.
 
         Returns
         =======
         out : numpy array
-            elapsed secs since 1958/1/1 (includes leap secs, i.e. all secs have equal lengths)
+            TAI as seconds since 1958-1-1.
 
         Examples
         ========
@@ -1297,16 +1543,96 @@ class Ticktock(MutableSequence):
 
         See Also
         ========
-        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getISO, getDOY, geteDOY
-
+        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getISO, getDOY, geteDOY,
+        getAPT
         """
+        if self.data.attrs['dtype'] == 'TAI':
+            # This should be the case from the constructor
+            self.TAI = self.data
+            return self.TAI
+        if self.data.attrs['dtype'] == 'GPS':
+            GPS0 = 694656019
+            self.TAI = spacepy.datamodel.dmarray(
+                self.data + GPS0, attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'MJD':
+            MJDofTAI0 = 36204.5 # Days-since-1958 is relative to noon
+            self.TAI = spacepy.datamodel.dmarray(
+                _days1958totai(
+                    np.require(self.data, dtype=np.float64)
+                    - MJDofTAI0, leaps='rubber', midnight=False),
+                attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'JD':
+            JDofTAI0 = 2436205.0 # Days-since-1958 is relative to noon
+            self.TAI = spacepy.datamodel.dmarray(
+                _days1958totai(
+                    np.require(self.data, dtype=np.float64)
+                    - JDofTAI0, leaps='rubber', midnight=False),
+                attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'RDT':
+            RDTofTAI0 = 714780. #RDT date of 1958-1-1T00
+            tai = _days1958totai(
+                np.require(self.data, dtype=np.float64)
+                - RDTofTAI0, leaps='drop', midnight=True)
+            # Anything before 1582-10-5 has TAI ten days later than the
+            # naive conversion, because RDT has ten days that are not in TAI.
+            tai[tai < -11840601600.0] += 864000
+            self.TAI = spacepy.datamodel.dmarray(tai, attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'CDF':
+            CDFofTAI0 = 61788528000000.0
+            # Naive TAI conversion
+            tai = (self.data - CDFofTAI0) / 1.e3
+            tai = _tai_naive_to_real(tai)
+            self.TAI = spacepy.datamodel.dmarray(tai, attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'UNX':
+            UNXofTAI0 = -378691200.
+            # Naive TAI
+            tai = self.data - UNXofTAI0
+            tai = _tai_naive_to_real(tai)
+            self.TAI = spacepy.datamodel.dmarray(tai, attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'APT':
+            # AstroPy time doesn't support TAI directly, have to go relative
+            # to GPS. But since it's a simple offset, just do the math here
+            # instead of via the GPS attribute.
+            GPS0 = 694656019
+            self.TAI = spacepy.datamodel.dmarray(
+                self.data.gps + GPS0, attrs={'dtype': 'TAI'})
+            return self.TAI
+        if self.data.attrs['dtype'] == 'ISO':
+            isoout, UTC, offset = dtstr2iso(self.data, self._isofmt)
+            if 'UTC' not in dir(self):
+                self.UTC = spacepy.datamodel.dmarray(
+                    UTC, attrs={'dtype': 'UTC'})
+            if 'ISO' not in dir(self):
+                self.ISO = spacepy.datamodel.dmarray(
+                    isoout, attrs={'dtype': 'ISO'})
+        else:
+            UTC = self.UTC
+            offset = None
+
         TAI0 = datetime.datetime(1958, 1, 1, 0, 0, 0, 0)
 
         leapsec = self.getleapsecs()
-        TAItup = [utc - TAI0 + datetime.timedelta(seconds=int(ls)) for utc, ls in zip(self.UTC, leapsec)]
-        TAI = [tai.days * 86400 + tai.seconds + tai.microseconds / 1.e6 for tai in TAItup]
+        TAItup = [utc - TAI0 + datetime.timedelta(seconds=int(ls)) for utc, ls in zip(UTC, leapsec)]
+        if offset is not None:
+            TAI = [tai.days * 86400 + tai.seconds
+                   + (tai.microseconds + offset[i])/ 1.e6
+                   for i, tai in enumerate(TAItup)]
+        else:
+            TAI = [tai.days * 86400 + tai.seconds + tai.microseconds / 1.e6
+                   for tai in TAItup]
 
-        self.TAI = spacepy.datamodel.dmarray(TAI, attrs={'dtype': 'TAI'})
+        TAI = spacepy.datamodel.dmarray(TAI, attrs={'dtype': 'TAI'})
+        # 1582-10-5 through 1582-10-14 do not exist, so anything
+        # before 1582-10-15 is 10 TAI days later than the naive conversion.
+        TAI[TAI < -11840601600.0] += (86400 * 10)
+
+        self.TAI = TAI
         return self.TAI
 
     # -----------------------------------------------
@@ -1315,6 +1641,12 @@ class Ticktock(MutableSequence):
         a.ISO or a.getISO()
 
         convert dtype data into ISO string
+
+        Always recalculates from the current value of ``UTC``, which
+        will be created if necessary. Applies leapsecond correction
+        based on ``TAI``, also created as necessary.
+
+        Updates the ``ISO`` attribute.
 
         Returns
         =======
@@ -1329,16 +1661,29 @@ class Ticktock(MutableSequence):
 
         See Also
         ========
-        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY
-
+        getUTC, getUNX, getRDT, getJD, getMJD, getCDF, getTAI, getDOY, geteDOY,
+        getAPT
         """
+        if self.data.attrs['dtype'] == 'ISO': # Convert the string directly.
+            self.ISO = spacepy.datamodel.dmarray(
+                dtstr2iso(self.data, fmt=self._isofmt)[0],
+                attrs={'dtype': 'ISO'})
+            return self.ISO
         nTAI = len(self.data)
         self.TAI = self.getTAI()
-        self.ISO = spacepy.datamodel.dmarray([utc.strftime(self._isofmt) for utc in self.UTC], attrs={'dtype': 'ISO'})
+        try:
+            iso = [utc.strftime(self._isofmt) for utc in self.UTC]
+        except ValueError: # Python before 3.3 fails on strftime before 1900.
+            iso = [utc.replace(year=1900).strftime(
+                self._isofmt.replace('%Y', str(utc.year))) for utc in self.UTC]
+        self.ISO = spacepy.datamodel.dmarray(iso, attrs={'dtype': 'ISO'})
         for i in range(nTAI):
-            if self.TAI[i] in self.TAIleaps:
-                tmptick = self.UTC[i] - datetime.timedelta(seconds=1)
-                a, b, c = tmptick.ISO[0].split(':')
+            if int(self.TAI[i]) in TAIleaps:
+                # UTC is 23:59:59.9999, get correct number of microseconds
+                tmpdt = self.UTC[i].replace(
+                    microsecond=int((self.TAI[i] % 1) * 1e6))
+                # And fudge the second
+                a, b, c = tmpdt.strftime(self._isofmt).split(':')
                 cnew = c.replace('59', '60')
                 self.ISO[i] = a + ':' + b + ':' + cnew
 
@@ -1350,6 +1695,12 @@ class Ticktock(MutableSequence):
         a.leaps or a.getleapsecs()
 
         retrieve leapseconds from lookup table, used in getTAI
+
+        Always recalculates from current value of ``TAI`` if ``data``
+        is dtype ``TAI``, otherwise from the current value of ``UTC``,
+        which will be created if necessary.
+
+        Updates the ``leaps`` attribute.
 
         Returns
         =======
@@ -1367,42 +1718,15 @@ class Ticktock(MutableSequence):
         getTAI
 
         """
-        from spacepy import DOT_FLN
-
+        if self.data.attrs['dtype'] == 'TAI':
+            # TAIleaps contains the TAI which IS the leap second.
+            # The leap second count increments in the NEXT second.
+            # (TAI - UTC changes at end of leap second.)
+            # So find the latest index where the TAI-after-leap-second
+            # is less than current TAI (i.e. we are not after leap second yet).
+            idx = np.searchsorted(TAIleaps + 1, self.data, side='right') - 1
+            return secs[idx]
         tup = self.UTC
-        # so you don't have to read the file every single time
-        global secs, year, mon, day, TAIleaps
-
-        try:
-            leaps = secs[0]
-
-        except:  # then we are calling this routine the 1st time
-            # load current file
-            fname = os.path.join(DOT_FLN, 'data', 'tai-utc.dat')
-            with open(fname) as fh:
-                text = fh.readlines()
-
-            secs = np.zeros(len(text))
-            year = np.zeros(len(text))
-            mon = np.zeros(len(text))
-            day = np.zeros(len(text))
-
-            months = np.array(['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                               'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'])
-
-            for line, i in zip(text, np.arange(len(secs))):
-                secs[i] = int(float(line.split()[6]))  # truncate float seconds
-                year[i] = int(line.split()[0])
-                mon[i] = int(np.where(months == line.split()[1])[0][0] + 1)
-                day[i] = int(line.split()[2])
-
-            TAIleaps = np.zeros(len(secs))
-            TAItup = [''] * len(secs)
-            TAI0 = datetime.datetime(1958, 1, 1, 0, 0, 0, 0)
-            for i in np.arange(len(secs)):
-                TAItup[i] = datetime.datetime(int(year[i]), int(mon[i]), int(day[i])) - TAI0 + datetime.timedelta(
-                    seconds=int(secs[i]) - 1)
-                TAIleaps[i] = TAItup[i].days * 86400 + TAItup[i].seconds + TAItup[i].microseconds / 1.e6
 
         # check if array:
         if isinstance(tup, datetime.datetime):  # not an array of objects
@@ -1420,7 +1744,7 @@ class Ticktock(MutableSequence):
                       y, m, d, s in zip(year, mon, day, secs)]
         for i, itup in enumerate(tup):
             ind = bisect.bisect_right(leap_dates, tup[i])
-            leaps[i] = secs[ind - 1]
+            leaps[i] = secs[ind - 1] if ind > 0 else 0
 
         ## ldatetime = datetime.datetime # avoid an expensive lookup below
         ## for i, itup in enumerate(tup):
@@ -1444,39 +1768,57 @@ class Ticktock(MutableSequence):
     @classmethod
     def now(cls):
         """
-        Creates a Ticktock object with the current time, equivalent to datetime.now()
+        Create Ticktock with the current UTC time.
+
+        Equivalent to datetime.utcnow()
+
+        .. versionchanged:: 0.2.2
+            This now returns a UTC time; previously it returned a Ticktock
+            UTC object, but in the local timezone, which made all conversions
+            incorrect.
 
         Returns
         =======
-            out : ticktock
-                Ticktock object with the current time, equivalent to datetime.now()
+        out : ticktock
+            Ticktock object with the current time, equivalent to datetime.utcnow()
 
         See Also
         ========
-        datetime.datetime.now
+        datetime.datetime.now, datetime.datetime.utcnow
 
         """
-        dt = datetime.datetime.now()
+        warnings.warn('now() returns UTC time as of 0.2.2.',
+                      DeprecationWarning)
+        dt = datetime.datetime.utcnow()
         return Ticktock(dt, 'UTC')
 
     # -----------------------------------------------
     @classmethod
     def today(cls):
         """
-        Creates a Ticktock object with the current date and time set to 00:00:00, equivalent to date.today() with time
-        included
+        Create Ticktock with the current UTC date and time set to 00:00:00
+
+        Similar to date.today() with time included but in UTC and with the
+        time included (zero hours, minutes, seconds)
+
+        .. versionchanged:: 0.2.2
+            This now returns the UTC day; previously it returned a Ticktock
+            UTC object, but in the local timezone, which made all conversions
+            incorrect.
 
         Returns
         =======
             out : ticktock
-                Ticktock object with the current time, equivalent to date.today() with time included
+                Ticktock object with the current UTC day
 
         See Also
         ========
-        datetime.date.today()
+        datetime.date.today
 
         """
-        dt = datetime.datetime.now()
+        warnings.warn('today() returns UTC day as of 0.2.2.',
+                      DeprecationWarning)
+        dt = datetime.datetime.utcnow()
         dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
         return Ticktock(dt, 'UTC')
 
@@ -1607,6 +1949,136 @@ def tickrange(start, end, deltadays, dtype=None):
     return ticks
 
 
+def dtstr2iso(dtstr, fmt='%Y-%m-%dT%H:%M:%S'):
+    """Convert a datetime string to a standard format
+
+    Attempts to maintain leap second representation while converting
+    time strings to the specified format (by default, ISO8601-like.)
+    Only handles a single positive leap second; negative leap seconds
+    require no special handling and policy is for UTC-UT1 not to
+    exceed 0.9.
+
+    Parameters
+    ==========
+    dtstr : sequence of str
+        Date + time representation, format is fairly open.
+
+    Returns
+    =======
+    isostr : array of str
+        Representation of `dtstr` formatted according to `fmt`.
+        Always a new sequence even if contents are identical to `dtstr`.
+    UTC : array of datetime.datetime
+        The closest-possible rendering of UTC time before or equal to `dtstr`.
+    offset : array of int
+        Amount (in microseconds) to add to `UTC` to get the real time.
+
+    Other Parameters
+    ================
+    fmt : str, optional
+        Format appropriate for :meth:`~datetime.datetime.strftime` for
+        rendering the output time.
+    """
+    indtstr = dtstr
+    # Will be editing this, so force it to own its data (but keep copy!)
+    dtstr = np.require(indtstr, dtype='S' if str is bytes else 'U',
+                       requirements='O')
+    dtstr = dtstr.copy() if dtstr is indtstr else dtstr
+    # Replace leapsecond with a valid "59"
+    # Indices of every place that might be leap second
+    # Leap second is sec==60, must come at LEAST after YYMMDDHHMM, if
+    # being very terse, but this still will avoid YYYY-060
+    lsidx = np.char.rfind(dtstr, '60') >= 10
+    if lsidx.shape == ():
+        lsidx = lsidx.reshape((1,)) #atleast1d is only in new numpy
+    leapidx = np.transpose(np.nonzero(lsidx))
+    # Add offset to datetime value to get actual UTC,
+    # in integer microseconds.
+    offset = np.zeros(shape=dtstr.shape, dtype=np.uint32)
+    # Actual leap second indices (not just suspected)
+    realleap = []
+    for j, idx in enumerate(leapidx): # Should be short list, so loop it
+        # Get the index to scalar if necessary
+        i = tuple(idx) if dtstr.shape else ()
+        # The leap second must be preceded by at least 10 char (above),
+        # followed by either nothing or fractional seconds,
+        # preceded by 59 minutes (and optional separator)
+        # It must also not be preceded by a . (to avoid replacing
+        # 60 milliseconds with 59 milliseconds).
+        dtstr[i], count = re.subn(
+            r'^([^\.]{8,}59[^\d]?)60((?:\.\d+)?)$', r'\g<1>59\g<2>', dtstr[i])
+        # Doing this subtracted one second.
+        if count:
+            realleap.append(idx)
+            offset[i] = 1e6
+    # Cut index of leap seconds down to real ones.
+    leapidx = np.array(realleap)
+    # try a few special cases that are faster than dateutil.parser
+    strfmts = ['%Y-%m-%dT%H:%M:%S',
+               '%Y-%m-%dT%H:%M:%SZ',
+               '%Y-%m-%d',
+               '%Y%m%d',
+               '%Y%m%d %H:%M:%S']
+    if fmt not in strfmts:
+        strfmts.insert(0, fmt)
+    for strfmt in strfmts:
+        try:
+            UTC = np.frompyfunc(
+                lambda x: datetime.datetime.strptime(x, strfmt), 1, 1)(dtstr)
+            break
+        except ValueError:
+            continue
+    else:
+        UTC = np.frompyfunc(dup.parse, 1, 1)(dtstr)
+    otypes = ['S' if str is bytes else 'U']
+    try:
+        isostr = np.vectorize(lambda x: x.strftime(fmt), otypes=otypes)(UTC)
+    except ValueError: # Python before 3.3 fails on strftime before 1900.
+        isostr = np.vectorize(
+            lambda x: x.replace(year=1900).strftime(fmt.replace(
+                '%Y', str(x.year))), otypes=otypes)(UTC)
+    # Check that leap seconds are actually valid
+    if len(leapidx):
+        # Day that ends in leap second *entry* (may not be leap second)
+        # Unbelievably these are read as floats, and other places rely on that.
+        leapsecday = np.array([
+            datetime.date(int(y), int(m), int(d))- datetime.timedelta(days=1)
+            for y, m , d in zip(year, mon, day)])
+        # Find only those leap seconds that are really changes
+        idx = np.nonzero(np.diff(np.concatenate(([0], secs))))[0]
+        leapsecday = leapsecday[idx]
+        if dtstr.shape == ():
+            if UTC.date() not in leapsecday:
+                raise ValueError('{} is not a valid leapsecond.'.format(
+                    indtstr))
+        else:
+            utcday = np.frompyfunc(lambda x: x.date(), 1, 1)(UTC[leapidx])
+            # Last day w/leapsecond that comes before supposed leapsec day
+            closestday = np.clip(
+                np.searchsorted(leapsecday, utcday), None, len(leapsecday) - 1)
+            bad = utcday != leapsecday[closestday]
+            if bad.any():
+                raise ValueError('{} is not a valid leapsecond.'.format(
+                    indtstr[leapidx[bad][0]]))
+    #Peg all leap seconds to the end of the previous second
+    for idx in leapidx:
+        i = tuple(idx) if dtstr.shape else ()
+        if not offset[i]:
+            continue
+        # The time string is off by one second.
+        if i == (): # Scalar input.
+            isostr = UTC.strftime(fmt.replace('%S', '60'))
+            us = UTC.microsecond
+            UTC = UTC + datetime.timedelta(microseconds=(1e6 - us - 1))
+            offset = us + 1
+        else:
+            isostr[i] = UTC[i].strftime(fmt.replace('%S', '60'))
+            us = UTC[i].microsecond
+            UTC[i] = UTC[i] + datetime.timedelta(microseconds=(1e6 - us - 1))
+            offset[i] = us + 1
+    return isostr, UTC, offset
+
+
 def sec2hms(sec, rounding=True, days=False, dtobj=False):
     """Convert seconds of day to hours, minutes, seconds
 
@@ -1661,14 +2133,17 @@ def no_tzinfo(dt):
         list of datetime.datetime without tzinfo
 
     """
-    returnclass = dt.__class__
+    returnclass = type(dt)
     try:
         retval = [val.replace(tzinfo=None) for val in dt]
     except TypeError:  # was not an iterable, assume datetime
         return dt.replace(tzinfo=None)
     #special case: numpy ndarray - dmarray and masked array work, but not ndarray
     if returnclass is not np.ndarray:
-        return returnclass(retval)
+        retval = returnclass(retval)
+        if hasattr(dt, 'attrs') and hasattr(retval, 'attrs'):
+            retval.attrs.update(dt.attrs)
+        return retval
     else:
         return np.asarray(retval)
 
@@ -1710,7 +2185,10 @@ def leapyear(year, numdays=False):
 
 def randomDate(dt1, dt2, N=1, tzinfo=False, sorted=False):
     """
-    Return a (or many) random datetimes between two given dates, this is done under the convention dt <=1 rand < dt2
+    Return a (or many) random datetimes between two given dates
+
+    Convention used is dt1 <= rand < dt2. Leap second times will
+    not be returned.
 
     Parameters
     ==========
@@ -1736,21 +2214,15 @@ def randomDate(dt1, dt2, N=1, tzinfo=False, sorted=False):
     Examples
     ========
     """
-    from matplotlib.dates import date2num, num2date
-
     if dt1.tzinfo != dt2.tzinfo:
-        raise (ValueError('tzinfo for the input and output datetimes must match'))
-    dt1n = date2num(dt1)
-    dt2n = date2num(dt2)
-    rnd_tn = np.random.uniform(dt1n, dt2n, size=N)
-    rnd_t = num2date(rnd_tn)
-    if not tzinfo:
-        tzinfo = None
-    else:
-        tzinfo = dt1.tzinfo
-    rnd_t = np.asarray([val.replace(tzinfo=tzinfo) for val in rnd_t])
+        raise ValueError('tzinfo for the input and output datetimes must match')
+    tt = Ticktock([dt1, dt2]).RDT
+    rnd_tn = np.random.uniform(tt[0], tt[1], size=N)
+    rnd_t = Ticktock(rnd_tn, dtype='RDT')
     if sorted:
         rnd_t.sort()
+    rnd_t = np.asarray([val.replace(tzinfo=dt1.tzinfo if tzinfo else None)
+                        for val in rnd_t.UTC])
     return rnd_t
 
 
@@ -1787,3 +2259,403 @@ def valid_YYYYMMDD(inval):
         return True
     else:
         return False
+
+
+def _leapsgood(now, filetime, lastleap):
+    """Determines if leap seconds are up-to-date
+
+    Parameters
+    ----------
+    now : datetime.datetime
+        Current time (UTC assumed)
+    filetime : datetime.datetime
+        Timestamp (mtime) of the leapsecond file
+    lastleap : datetime.datetime
+        Last leapsecond in the file (really the moment after the leap)
+
+    Returns
+    -------
+    bool
+        True if leap second file is up-to-date, False if might not be.
+    """
+    # There cannot be a leap second until AFTER the ls after the
+    # bulletin (e.g. once past 1 Jan, know the next possible is next 1 Jan)
+    goodto_mtime = datetime.datetime(
+        filetime.year + 1, 7 if filetime.month > 6 else 1, 1)
+    # The next possible leapsecond is 6mo after the previous known leap,
+    # which is (technically just before) 1 Jan or 1 July
+    goodto_ls = datetime.datetime(
+        lastleap.year + int(lastleap.month > 6),
+        1 if lastleap.month > 6 else 7, 1)
+    goodto = max(goodto_ls, goodto_mtime)
+    return now < goodto
+
+
+def _read_leaps(oldstyle=False):
+    """Read leapseconds in from spacepy tai-utc file
+
+    Populates module-global variables with leapsecond information:
+    secs, year, mon, day, TAIleaps.
+    Called on import of this module.
+
+    Other Parameters
+    ----------------
+    oldstyle : bool
+
+        .. versionadded:: 0.2.3
+
+        Treat leapseconds as in SpacePy 0.2.2 (default False). Default is
+        to ignore the file contents through 1 Jan 1972 and use SpacePy's own
+        list of integral leapseconds, which uses the post-1972 standard
+        (add a leapsecond on January 1/July 1 if UTC - UT1 > 0.4s).
+    """
+    global secs, year, mon, day, TAIleaps
+    # load current file
+    fname = os.path.join(spacepy.DOT_FLN, 'data', 'tai-utc.dat')
+    try:
+        with open(fname) as fh:
+            text = fh.readlines()
+        mtime = datetime.datetime(*time.gmtime(os.path.getmtime(fname))[:6])
+    except IOError:
+        warnings.warn('Cannot read leapsecond file. Use'
+                      ' spacepy.toolbox.update(leapsecs=True).')
+        text = [] # Use built-in pre-1972 leaps
+        mtime = None
+    # Some files have a "last checked" line at the top
+    if text and text[0].startswith('Checked'):
+        del text[0]
+
+    months = np.array(['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'])
+
+    if not oldstyle: # Use internal integral leapsecond count until 1972
+        keep_idx = next((i for i, l in enumerate(text)
+                         if int(l[:5]) > 1972
+                         or int(l[:5]) == 1972 and l[6:9] == 'JUL'), len(text))
+        leaps = [(1959, 1, 36569), (1961, 1, 37300), (1963, 7, 38211),
+                 (1965, 1, 38761), (1966, 7, 39307), (1967, 7, 39672),
+                 (1968, 7, 40038), (1969, 7, 40403), (1970, 7, 40768),
+                 (1971, 7, 41133)]
+        # 1972 Jan NOT a leapsecond in this formulation; TAI-UTC=10s at 71 Jul
+        text = [
+            ' {Y} {M}  1 =JD {JD}  TAI-UTC={L:12.7f} S '
+            '+ (MJD - 00000.) X 0.0000000 S   ACTUAL\n'.format(
+                Y=l[0], M=months[l[1] - 1], JD=l[2] + 2400000.5, L=i + 1)
+            for i, l in enumerate(leaps)] \
+                + text[keep_idx:]
+    secs = np.zeros(len(text))
+    year = np.zeros(len(text))
+    mon = np.zeros(len(text))
+    day = np.zeros(len(text))
+
+    for line, i in zip(text, np.arange(len(secs))):
+        # Round float seconds (0.5 always rounds up.)
+        secs[i] = int(float(line.split()[6]) + 0.5)
+        year[i] = int(line.split()[0])
+        mon[i] = int(np.where(months == line.split()[1])[0][0] + 1)
+        day[i] = int(line.split()[2])
+
+    # Check for out of date. The leap second bulletin comes every
+    # six months, and that contains information through the following
+    # leap second (end of June/Dec)
+    if mtime is not None and spacepy.config['enable_old_data_warning'] \
+       and not _leapsgood(
+           datetime.datetime.utcnow(), mtime,
+           datetime.datetime(int(year[-1]), int(mon[-1]), int(day[-1]))):
+            warnings.warn('Leapseconds may be out of date.'
+                          ' Use spacepy.toolbox.update(leapsecs=True)')
+
+    TAIleaps = np.zeros(len(secs))
+    TAItup = [''] * len(secs)
+    TAI0 = datetime.datetime(1958, 1, 1, 0, 0, 0, 0)
+    for i in np.arange(len(secs)):
+        TAItup[i] = datetime.datetime(int(year[i]), int(mon[i]), int(day[i])) - TAI0 + datetime.timedelta(
+            seconds=int(secs[i]) - 1)
+        TAIleaps[i] = TAItup[i].days * 86400 + TAItup[i].seconds + TAItup[i].microseconds / 1.e6
+
+
+def _days1958(tai, leaps='rubber', midnight=False):
+    """Calculate days and fractional days since 1958-01-01T12:00
+
+    This is basically a Julian Date but baselined from the start of TAI.
+    Since it is calculated from TAI, using this as day 0 maximizes the
+    resolution of the resulting values.
+
+    Parameters
+    ==========
+    tai : sequence of float
+        TAI seconds (i.e. continuous SI seconds relative to 1958-01-01T00:00)
+
+    leaps : str, optional
+        How to treat days with leapseconds. Since the Julian Date runs
+        noon (inclusive) to noon (exclusive), this affects the back
+        half of the date with the leapsecond, and the first half of the
+        next. Accepted values are:
+
+        rubber
+            Consider these days to be 86401 seconds long and thus treat
+            each second as a slightly smaller fraction of the day,
+            so that all times are represented and evently spaced within
+            the day. I.e. the day is "stretched" across more seconds, by
+            analogy with the "rubber second" of 1960-1972. (default)
+
+        drop
+            Treate time as a flow of SI seconds that is suspended during
+            leapseconds, i.e. leapsecond time does not exist. Time during
+            leap seconds is pinned to the last microsecond of the
+            previous second.
+
+        continuous
+            Treat time as a continuous flow of SI seconds with days always
+            86400 seconds long. This is the proper handling for true
+            Julian Dates, i.e. JD(TAI), as recommended by IAU General Assembly
+            XXIII, resolution B1.
+
+    Returns
+    =======
+    sequence of float
+        Days, including fraction, relative to 1958-01-01T12:00
+
+    Other parameters
+    ================
+    midnight : bool, optional
+        Start the day at midnight instead of noon. This affects the allocation
+        of leap seconds, and of course days are relative to 1958-01-01T00:00
+    """
+    off = 0. if midnight else 43200. # Offset from midnight
+    # Shift to time-since-noon, if desired (also makes copy), call delta-TAI
+    dtai = np.require(tai, dtype=np.float64) - off
+    leap_dtai, taiutc = _changed_leaps()
+    leap_dtai -= off # delta-TAI of start of leap second
+    if leaps in ('rubber', 'drop'):
+        # Index of leapsecond equal to or before each time record
+        lidx = np.searchsorted(leap_dtai, dtai, side='right') - 1
+    elif leaps != 'continuous':
+        raise ValueError('leaps handling {} not recognized.'.format(leaps))
+    if leaps == 'rubber':
+        # d-TAI of start-of-day (noon or midnight) before/after each leapsecond
+        # because leapseconds always start at 23:59:60 (43200s after noon).
+        if midnight:
+            daystart_before_leap = leap_dtai - 86400
+            daystart_after_leap = leap_dtai + 1
+        else:
+            daystart_before_leap = leap_dtai - 43200
+            daystart_after_leap = leap_dtai + 43201
+        # Closest leapsecond-day-start before record.
+        # May be greater than lidx, if near but before leapsecond
+        ldidx = np.searchsorted(daystart_before_leap, dtai, side='right') - 1
+        # All records that happen on leap second days.
+        leap_sec_day = (daystart_before_leap[ldidx] <= dtai) \
+                       & (dtai < daystart_after_leap[ldidx])
+        # Save SSD on leap second days, about to be destroyed
+        if leap_sec_day.shape == (): # Scalar
+            ssd_leap_sec_day = dtai - daystart_before_leap[ldidx]
+        else:
+            ssd_leap_sec_day = dtai[leap_sec_day] \
+                               - daystart_before_leap[ldidx[leap_sec_day]]
+        # Destroy leap seconds, so days always break at 86400s
+        dtai -= taiutc[lidx]
+    elif leaps == 'drop':
+        # Where in a leapsecond, pin to previous second
+        inleap = dtai - leap_dtai[lidx] < 1
+        if inleap.shape == (): # Scalar
+            if inleap:
+                dtai = np.floor(dtai) - .000001
+                lidx -= 1 # Associated with previous TAI - UTC
+        else:
+            dtai[inleap] = np.floor(dtai[inleap]) - .000001
+            # Already subtracted ~1sec, now associated with previous TAI - UTC
+            lidx[inleap] -= 1
+        # Remove all of the TAI seconds that "disappeared".
+        dtai -= taiutc[lidx]
+    day = np.floor(dtai / 86400)
+    ssd = dtai - day * 86400 # Mod does wrong thing if negative.
+    if leaps == 'rubber':
+        # Patch back in the SSD on leap-second days.
+        if leap_sec_day.shape == (): # Scalar
+            if leap_sec_day:
+                ssd = ssd_leap_sec_day
+        else:
+            ssd[leap_sec_day] = ssd_leap_sec_day
+        daylen = np.choose(leap_sec_day, (86400., 86401.))
+    else:
+        daylen = 86400
+    return day + ssd / daylen
+
+
+def _days1958totai(days, leaps='rubber', midnight=False):
+    """Calculate TAI from days and fractional days since 1958-01-01T12:00
+
+    Input is basically a Julian Date but baselined from the start of TAI.
+    Since it is calculated from TAI, using this as day 0 maximizes the
+    resolution of the resulting values.
+
+    Parameters
+    ==========
+    days : sequence of float
+        Days, including fraction, relative to 1958-01-01T12:00
+
+    leaps : str, optional
+        How to treat days with leapseconds. Since the Julian Date runs
+        noon (inclusive) to noon (exclusive), this affects the back
+        half of the date with the leapsecond, and the first half of the
+        next. Accepted values are:
+
+        rubber
+            Consider these days to be 86401 seconds long and thus treat
+            each second as a slightly smaller fraction of the day,
+            so that all times are represented and evently spaced within
+            the day. I.e. the day is "stretched" across more seconds, by
+            analogy with the "rubber second" of 1960-1972. (default)
+
+        drop
+            Treate time as a flow of SI seconds that is suspended during
+            leapseconds, i.e. leapsecond time does not exist. Time during
+            leap seconds is not recovered (no output time during leaps.)
+
+        continuous
+            Treat time as a continuous flow of SI seconds with days always
+            86400 seconds long. This is the proper handling for true
+            Julian Dates, i.e. JD(TAI), as recommended by IAU General Assembly
+            XXIII, resolution B1.
+
+    Returns
+    =======
+    sequence of float
+        TAI seconds (i.e. continuous SI seconds relative to 1958-01-01T00:00)
+
+    Other parameters
+    ================
+    midnight : bool, optional
+        Start the day at midnight instead of noon. This affects the allocation
+        of leap seconds, and of course `days` are relative to 1958-01-01T00:00
+    """
+    days = np.require(days, dtype=np.float64)
+    off = 0. if midnight else 43200. # Offset from midnight
+    if leaps == 'continuous': # Very simple case.
+        return days * 86400 + off
+    elif leaps not in ('rubber', 'drop'):
+        raise ValueError('leaps handling {} not recognized.'.format(leaps))
+    leap_tai, taiutc = _changed_leaps()
+    leap_dtai = leap_tai - off # delta-TAI of start of leap second
+    # Days with leap second. Leap second is always late in day: end
+    # of day if doing midnight-to-midnight, halfway if noon-to-noon.
+    leap_day = np.floor((leap_dtai - taiutc) / 86400)
+    # Closest leapsecond-day before record.
+    ldidx = np.searchsorted(leap_day, days) - 1
+    # All records that happen on leap second days.
+    leap_sec_day = (ldidx > 0) \
+                   & (leap_day[ldidx] <= days) \
+                   & (days < leap_day[ldidx] + 1)
+    if leaps == 'rubber':
+        daylen = np.choose(leap_sec_day, (86400., 86401.))
+    else:
+        daylen = 86400.
+    # Naive TAI at start of day (no leapsecond corrections).
+    dayint = np.floor(days)
+    daystart = dayint * 86400
+    # Seconds from the start of naive day.
+    ssd = (days - dayint) * daylen # Mod does wrong thing if negative
+    # Index TAIUTC for every input. Start of day w/LS is still previous value.
+    taiutcidx = ldidx - np.require(leap_sec_day, dtype=np.intp)
+    # Keep small number adds together: ssd and leapseconds.
+    taiout = daystart + (ssd + off + taiutc[taiutcidx])
+    if leaps == 'drop':
+        # Any times after leap-second skip need an extra second.
+        taiutcidx += np.require(leap_sec_day & (taiout >= leap_tai[ldidx]),
+                                dtype=np.intp)
+        # Recalculate to keep small-number addition together
+        taiout = daystart + (ssd + off + taiutc[taiutcidx])
+    return taiout
+
+
+def _changed_leaps():
+    """Find only those times where leap seconds actually changed
+
+    There are leap second records where there is no actual change
+    in leap seconds, and there isn't a record for TAI-UTC == 0; this
+    adds a record (where the TAI of the leap second time is -inf) and
+    eliminated those with no actual change.
+
+    Returns
+    =======
+    leap_tai : sequence of float
+        TAI of the start of every leap second.
+    taiutc : sequence of float
+        TAI - UTC at the end of the leap second.
+    """
+    # Find only those leap seconds that are really changes
+    idx = np.nonzero(np.diff(np.concatenate(([0], secs))))[0]
+    leap_tai = TAIleaps[idx] # TAI of start of leap second
+    taiutc = secs[idx] # TAI - UTC after leap second (same index as leap_tai)
+    # Add fake TAI - UTC = 0 at the Big Bang
+    leap_tai = np.concatenate(([-np.inf], leap_tai))
+    taiutc = np.concatenate(([0], taiutc))
+    return leap_tai, taiutc
+
+
+def _tai_naive_to_real(tai):
+    """Convert naive TAI to real TAI
+
+    Convert a TAI on a continuous timescale that skips over leapseconds
+    and is unaware of calendar conversion to actual TAI, which includes
+    leapseconds and is continuous across the Gregorian conversion (naive
+    has a gap, i.e. dates it can represent that don't exist.)
+
+    Parameters
+    ==========
+    tai : sequence of float
+        Naive TAI
+
+    Returns
+    =======
+    tai : sequence of float
+        TAI
+    """
+    # This is the ACTUAL TAI and TAI-UTC at the end of that TAI
+    leap_tai, taiutc = _changed_leaps()
+    # Naive TAI and index that corresponds to TAI - UTC
+    naive_leap_tai = leap_tai - taiutc + 1
+    taiutcidx = np.searchsorted(naive_leap_tai, tai, side='right') - 1
+    realtai = tai + taiutc[taiutcidx]
+    # Anything before 1582-10-5 has TAI ten days later than the
+    # naive conversion, because naive has ten days that are not in TAI.
+    realtai[realtai < -11840601600.0] += 864000
+    return realtai
+
+
+def _tai_real_to_naive(tai):
+    """Convert naive TAI to actual TAI
+
+    Convert actual TAI, which includes leapseconds and is continuous
+    across the Gregorian calendar conversion, to naive TAI, which skips
+    over leapseconds and has times in the calendar conversion that
+    do not actually exist.
+
+    Parameters
+    ==========
+    tai : sequence of float
+        TAI
+
+    Returns
+    =======
+    tai : sequence of float
+        Naive TAI
+    """
+    # ACTUAL TAI and TAI-UTC at the end of that TAI
+    leap_tai, taiutc = _changed_leaps()
+    # Points to largest leap-TAI less-than input TAI, thus also TAI-UTC
+    lidx = np.searchsorted(leap_tai, tai, side='right') - 1
+    # Records in a leap second
+    inleap = tai < leap_tai[lidx] + np.diff(taiutc)[lidx - 1]
+    naive_tai = np.choose(inleap, (
+        tai - taiutc[lidx], # Just subtract off LS
+        np.floor(tai) + (.999 - taiutc[lidx]) # Peg to end of sec
+        ))
+    # Anything before 1582-10-15 needs to skip 10 CDF days backward,
+    # since naive has ten days that are not in TAI
+    naive_tai[tai < -11839737600.0] -= 864000
+    return naive_tai
+
+
+_read_leaps()

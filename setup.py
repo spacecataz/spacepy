@@ -11,16 +11,20 @@ Los Alamos National Laboratory
 Copyright 2010 - 2014 Los Alamos National Security, LLC.
 """
 
-#pip force-imports setuptools, on INSTALL, so then need to use its versions
-#but on reading the egg info, it DOESN'T force-import, assumes you are using
 import sys
-if any([a in sys.argv for a in ('pip-egg-info', 'bdist_wheel')]):
+# Calling egg info, so a lot of stuff doesn't have to work
+egginfo_only = any([a in sys.argv for a in (
+    'pip-egg-info', 'egg_info', 'dist_info')])
+if egginfo_only:
+    # pip force-imports setuptools, on INSTALL, so then need to use its versions
+    # but on reading egg info, it DOESN'T force-import, assumes you are using
     import setuptools
 if 'bdist_wheel' in sys.argv:
+    # Similarly, self-inject setuptools if making wheel
+    import setuptools
     import wheel
 use_setuptools = "setuptools" in globals()
-#Calling egg info, so a lot of stuff doesn't have to work
-egginfo_only = ('pip-egg-info' in sys.argv)
+use_wininst = "bdist_wininst" in sys.argv
 
 import copy
 import os, shutil, getopt, glob, re
@@ -51,10 +55,11 @@ except: #numpy not installed, hopefully just getting egg info
         from distutils.command.install import install as _install
         from distutils.command.sdist import sdist as _sdist
 
-if use_setuptools:
-    from setuptools.command.bdist_wininst import bdist_wininst as _bdist_wininst
-else:
-    from distutils.command.bdist_wininst import bdist_wininst as _bdist_wininst
+if use_wininst:
+    if use_setuptools:
+        from setuptools.command.bdist_wininst import bdist_wininst as _bdist_wininst
+    else:
+        from distutils.command.bdist_wininst import bdist_wininst as _bdist_wininst
 if 'bdist_wheel' in sys.argv:
     from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 import distutils.ccompiler
@@ -156,14 +161,16 @@ def default_f2py():
         if '.' in interp[6:]: #try slicing off suffix-of-suffix (e.g., exe)
             suffix = interp[6:-(interp[::-1].index('.') + 1)]
             suffixes.extend([suffix, '-' + suffix])
+        vers = "{0.major:01d}.{0.minor:01d}".format(sys.version_info)
+        suffixes.extend([vers, '-'+vers])
         candidates = ['f2py' + s for s in suffixes]
         for candidate in candidates:
             for c in [candidate, candidate + '.py']:
                 for d in os.environ['PATH'].split(os.pathsep):
                     if os.path.isfile(os.path.join(d, c)):
                         return c
-                    if os.path.isfile(os.path.join(interpdir, c)):
-                        return os.path.join(interpdir, c) #need full path
+                if os.path.isfile(os.path.join(interpdir, c)):
+                    return os.path.join(interpdir, c) #need full path
     if sys.platform == 'win32':
         return 'f2py.py'
     else:
@@ -421,7 +428,7 @@ class build(_build):
             return
         # 64 bit or 32 bit?
         bit = len('%x' % sys.maxsize)*4
-        irbemdir = 'irbem-lib-2019-04-04-rev616'
+        irbemdir = 'irbem-lib-20210630-a4759c0'
         srcdir = os.path.join('spacepy', 'irbempy', irbemdir, 'source')
         outdir = os.path.join(os.path.abspath(self.build_lib),
                               'spacepy', 'irbempy')
@@ -512,11 +519,12 @@ class build(_build):
         olddir = os.getcwd()
         os.chdir(builddir)
         F90files = ['source/onera_desp_lib.f', 'source/CoordTrans.f', 'source/AE8_AP8.f', 'source/find_foot.f',\
-                    'source/drift_bounce_orbit.f']
+                    'source/LAndI2Lstar.f', 'source/drift_bounce_orbit.f']
         functions = ['make_lstar1', 'make_lstar_shell_splitting1', 'find_foot_point1',\
                      'coord_trans1','find_magequator1', 'find_mirror_point1',
                      'get_field1', 'get_ae8_ap8_flux', 'fly_in_nasa_aeap1',
-                     'trace_field_line2_1', 'trace_field_line_towards_earth1', 'trace_drift_bounce_orbit']
+                     'trace_field_line2_1', 'trace_field_line_towards_earth1', 'trace_drift_bounce_orbit',
+                     'landi2lstar1', 'landi2lstar_shell_splitting1']
 
         # call f2py
         cmd = self.f2py + ['--overwrite-signature', '-m', 'irbempylib', '-h',
@@ -547,6 +555,7 @@ class build(_build):
         with open(fln, 'w') as f:
             f.write(filestr)
 
+        print('Building irbem library...')
         # compile (platform dependent)
         os.chdir('source')
         comppath = {
@@ -557,28 +566,31 @@ class build(_build):
             'intelem': 'ifort',
             }[fcompiler]
         compflags = {
-            'pg': '-Mnosecond_underscore -w -fastsse -fPIC',
-            'gnu': '-w -O2 -fPIC -fno-second-underscore',
-            'gnu95': '-w -O2 -fPIC -ffixed-line-length-none -std=legacy',
-            'intel': '-Bstatic -assume 2underscores -O2 -fPIC',
-            'intelem': '-Bdynamic -O2 -fPIC',
+            'pg': ['-Mnosecond_underscore', '-w', '-fastsse', '-fPIC'],
+            'gnu': ['-w', '-O2', '-fPIC', '-fno-second-underscore'] ,
+            'gnu95': ['-w', '-O2', '-fPIC', '-ffixed-line-length-none',
+                      '-std=legacy'],
+            'intel': ['-Bstatic', '-assume', '2underscores', '-O2', '-fPIC'],
+            'intelem': ['-Bdynamic', '-O2', '-fPIC'],
             }[fcompiler]
         if fcompiler == 'gnu':
             if bit == 64:
-                compflags = '-m64 ' + compflags
-        if fcompiler == 'gnu95':
-            compflags = '-m{0} '.format(bit) + compflags
+                compflags = ['-m64'] + compflags
+        if not sys.platform.startswith('win') and fcompiler == 'gnu95' \
+           and not os.uname()[4].startswith('arm'):
+            # Raspberry Pi doesn't have this switch and assumes 32-bit
+            compflags = ['-m{0}'.format(bit)] + compflags
         if fcompiler.startswith('intel'):
             if bit == 32:
-                compflags = '-Bstatic -assume 2underscores ' + compflags
+                compflags = ['-Bstatic', '-assume', '2underscores'] + compflags
             else:
-                compflags = '-Bdynamic ' + compflags
+                compflags = ['-Bdynamic'] + compflags
         comp_candidates = [comppath]
         if fcompexec is not None and 'compiler_f77' in fcompexec:
             comp_candidates.insert(0, fcompexec['compiler_f77'][0])
         for fc in comp_candidates:
-            retval = subprocess.call(fc + ' -c ' + compflags + ' *.f',
-                                     shell=True)
+            retval = subprocess.call([fc, '-c'] + compflags
+                                     + list(glob.glob('*.f')))
             if retval == 0:
                 break
             else:
@@ -590,33 +602,31 @@ class build(_build):
             return
         retval = -1
         if 'archiver' in fcompexec:
-            archiver = ' '.join(fcompexec['archiver']) + ' '
-            ranlib = None
-            if 'ranlib' in fcompexec:
-                ranlib = ' '.join(fcompexec['ranlib']) + ' '
-            retval = subprocess.check_call(archiver + 'libBL2.a *.o', shell=True)
-            if (retval == 0) and ranlib:
-                retval = subprocess.call(ranlib + 'libBL2.a', shell=True)
+            retval = subprocess.check_call(fcompexec['archiver'] + ['libBL2.a']
+                                           + list(glob.glob('*.o')))
+            if (retval == 0) and 'ranlib' in fcompexec:
+                retval = subprocess.call(fcompexec['ranlib'] + ['libBL2.a'])
             if retval != 0:
                 warnings.warn(
                     'irbemlib linking failed, trying with default linker.')
         if retval != 0: #Try again with defaults
             archiver = {
-                'darwin': 'libtool -static -o ',
-                'linux': 'ar -r ',
-                'linux2': 'ar -r ',
-                'win32': 'ar - r',
+                'darwin': ['libtool', '-static', '-o'],
+                'linux': ['ar', '-r '],
+                'linux2': ['ar', '-r '],
+                'win32': ['ar', '-r '],
                 }[sys.platform]
             ranlib = {
                 'darwin': None,
-                'linux': 'ranlib ',
-                'linux2': 'ranlib ',
-                'win32': 'ranlib ',
+                'linux': 'ranlib',
+                'linux2': 'ranlib',
+                'win32': 'ranlib',
                 }[sys.platform]
             try:
-                subprocess.check_call(archiver + 'libBL2.a *.o', shell=True)
+                subprocess.check_call(archiver + ['libBL2.a']
+                                      + list(glob.glob('*.o')))
                 if ranlib:
-                    subprocess.check_call(ranlib + 'libBL2.a', shell=True)
+                    subprocess.check_call([ranlib, 'libBL2.a'])
             except:
                 warnings.warn(
                     'irbemlib linking failed. '
@@ -855,18 +865,19 @@ def copy_dlls(outdir):
         shutil.copy(os.path.join(libdir, f), outdir)
 
 
-class bdist_wininst(_bdist_wininst):
-    """Handle compiler options, libraries for build on Windows install"""
+if use_wininst:
+    class bdist_wininst(_bdist_wininst):
+        """Handle compiler options, libraries for build on Windows install"""
 
-    user_options = _bdist_wininst.user_options + compiler_options
+        user_options = _bdist_wininst.user_options + compiler_options
 
-    def initialize_options(self):
-        initialize_compiler_options(self)
-        _bdist_wininst.initialize_options(self)
+        def initialize_options(self):
+            initialize_compiler_options(self)
+            _bdist_wininst.initialize_options(self)
 
-    def finalize_options(self):
-        _bdist_wininst.finalize_options(self)
-        finalize_compiler_options(self)
+        def finalize_options(self):
+            _bdist_wininst.finalize_options(self)
+            finalize_compiler_options(self)
 
 
 if 'bdist_wheel' in sys.argv:
@@ -936,7 +947,7 @@ package_data = ['data/*.*', 'pybats/sample_data/*', 'data/LANLstar/*', 'data/TS0
 
 setup_kwargs = {
     'name': 'spacepy',
-    'version': '0.2.2',
+    'version': '0.3.0pre',
     'description': 'SpacePy: Tools for Space Science Applications',
     'long_description': 'SpacePy: Tools for Space Science Applications',
     'author': 'SpacePy team',
@@ -946,8 +957,8 @@ setup_kwargs = {
     'url': 'https://github.com/spacepy/spacepy',
 #download_url will override pypi, so leave it out http://stackoverflow.com/questions/17627343/why-is-my-package-not-pulling-download-url
 #    'download_url': 'https://sourceforge.net/projects/spacepy/files/spacepy/',
-    'requires': ['numpy (>=1.6)', 'scipy (>=0.10)', 'matplotlib (>=1.5)', 'python_dateutil',
-                 'h5py', 'python (>=2.7, !=3.0)'],
+    'requires': ['numpy (>=1.10, !=1.15.0)', 'scipy (>=0.11)', 'matplotlib (>=1.5)', 'python_dateutil',
+                 'h5py (>=2.6)', 'ffnet (>=0.7)', 'python (>=2.7, !=3.0)'],
     'packages': packages,
     'package_data': {'spacepy': package_data},
     'classifiers': [
@@ -973,10 +984,11 @@ setup_kwargs = {
     'platforms':  ['Windows', 'Linux', 'MacOS X', 'Unix'],
     'cmdclass': {'build': build,
                  'install': install,
-                 'bdist_wininst': bdist_wininst,
                  'sdist': sdist,
           },
 }
+if use_wininst:
+    setup_kwargs['cmdclass']['bdist_wininst'] = bdist_wininst
 
 if not egginfo_only:
     setup_kwargs['cmdclass']['config_fc'] = config_fc
@@ -984,20 +996,26 @@ if not egginfo_only:
 if use_setuptools:
 #Sadly the format here is DIFFERENT than the distutils format
     setup_kwargs['install_requires'] = [
-        'numpy>=1.6',
-        'scipy>=0.10',
+        'numpy>=1.10,!=1.15.0',
+        'scipy>=0.11',
         'matplotlib>=1.5',
-        'h5py',
-        #Do not install ffnet on Windows since there's no binary
-        #(people must hand-install)
-        'ffnet;platform_system!="Windows"',
+        'h5py>=2.6',
+        'ffnet>=0.7',
         #ffnet needs networkx but not marked as requires, so to get it via pip
         #we need to ask for it ourselves
-        'networkx',
-        'python_dateutil',
+        'networkx>=1.0',
+        'python_dateutil>=1.4',
+        # AstroPy is only required to convert to/from AstroPy, so either
+        # user has it or don't care.
+        #'astropy>=1.0',
     ]
 if 'bdist_wheel' in sys.argv:
     setup_kwargs['cmdclass']['bdist_wheel'] = bdist_wheel
+    # Don't require ffnet on binary wheels, since ffnet has no binary
+    # (users must hand-install). If user installs from source with pip,
+    # this will get ffnet the first time, but it will cache the wheel
+    # it builds from source, so subsequent installs won't reinstall ffnet!
+    setup_kwargs['install_requires'].remove('ffnet>=0.7')
 
 # run setup from distutil
 with warnings.catch_warnings(record=True) as warnlist:

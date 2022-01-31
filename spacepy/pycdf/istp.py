@@ -19,7 +19,7 @@ Contact: Jonathan.Niehof@unh.edu
 .. rubric:: Classes
 
 .. autosummary::
-    :toctree: autosummary  
+    :toctree:
     :template: clean_class.rst
 
     FileChecks
@@ -29,7 +29,7 @@ Contact: Jonathan.Niehof@unh.edu
 .. rubric:: Functions
 
 .. autosummary::
-    :toctree: autosummary  
+    :toctree:
 
     fillval
     format
@@ -39,6 +39,7 @@ Contact: Jonathan.Niehof@unh.edu
 import collections
 import datetime
 import functools
+import inspect
 import itertools
 import math
 import os.path
@@ -68,6 +69,7 @@ class VariableChecks(object):
         depsize
         empty_entry
         fieldnam
+        fillval
         recordcount
         validdisplaytype
         validrange
@@ -79,13 +81,14 @@ class VariableChecks(object):
     .. automethod:: depsize
     .. automethod:: empty_entry
     .. automethod:: fieldnam
+    .. automethod:: fillval
     .. automethod:: recordcount
     .. automethod:: validdisplaytype
     .. automethod:: validrange
     .. automethod:: validscale
 
     """
-    #When adding new tests, add to list above, and the list in all()
+    #When adding new tests, add to list above
     #Validation failures should be formatted as a sentence (initial cap,
     #closing period) and NOT include the variable name.
 
@@ -117,11 +120,9 @@ class VariableChecks(object):
         >>> spacepy.pycdf.istp.VariableChecks.all(v)
         ['No FIELDNAM attribute.']
         """
-        #Update this list when adding new test functions
-        callme = (cls.deltas, cls.depends, cls.depsize, cls.empty_entry,
-                  cls.fieldnam,
-                  cls.recordcount, cls.validrange, cls.validscale,
-                  cls.validdisplaytype)
+        callme = [func for name, func in inspect.getmembers(cls)
+                  if not name.startswith('_') and not name.endswith('_')
+                  and callable(func) and name != 'all']
         errors = []
         for f in callme:
             try:
@@ -158,7 +159,7 @@ class VariableChecks(object):
             Description of each validation failure.
 
         """
-        return ['{} variable {} missing'.format(a, v.attrs[a])
+        return ['{} variable {} missing.'.format(a, v.attrs[a])
                 for a in v.attrs
                 if (a.startswith(('DEPEND_', 'LABL_PTR_',))
                     or a in ('DELTA_PLUS_VAR', 'DELTA_MINUS_VAR'))
@@ -337,6 +338,77 @@ class VariableChecks(object):
         return errs
 
     @classmethod
+    def fillval(cls, v):
+        """Check for FILLVAL presence, type, value
+
+        Checks variable for existence of `FILLVAL
+        <https://spdf.gsfc.nasa.gov/istp_guide/vattributes.html#FILLVAL>`_
+        attribute and makes sure it is the same type as variable and matches
+        ISTP value.
+
+        Parameters
+        ----------
+        v : :class:`~spacepy.pycdf.Var`
+            Variable to check
+
+        Returns
+        -------
+        list of str
+            Description of each validation failure.
+
+        See Also
+        --------
+        spacepy.pycdf.istp.fillval : Automatic setting of this value.
+        """
+        errs = []
+        if not 'FILLVAL' in v.attrs:
+            return ['No FILLVAL attribute.']
+        if v.attrs.type('FILLVAL') != v.type():
+            errs.append(
+                'FILLVAL type {} does not match variable type {}.'.format(
+                    spacepy.pycdf.lib.cdftypenames[v.attrs.type('FILLVAL')],
+                    spacepy.pycdf.lib.cdftypenames[v.type()]))
+        expected = fillval(v, ret=True)
+        timetype = v.type() in spacepy.pycdf.lib.timetypes
+        actual = (v.cdf_file.raw_var(v.name()) if timetype else v)\
+                 .attrs['FILLVAL']
+        # isclose added in numpy 1.7, so fix this when go to 0.3.0
+        if hasattr(numpy, 'isclose'):
+            match = numpy.isclose(
+                actual, expected, atol=0, rtol=1e-7)\
+                if numpy.issubdtype(v.dtype, numpy.floating)\
+                else numpy.all(actual == expected)
+        else:
+            if numpy.issubdtype(v.dtype, numpy.floating):
+                match = (abs(actual - expected) / expected < 1e-7)
+            else:
+                match = numpy.all(actual == expected)
+        if not match:
+            if timetype:
+                converted_expected = {
+                    spacepy.pycdf.const.CDF_EPOCH.value:
+                    spacepy.pycdf.lib.v_epoch_to_datetime,
+                    spacepy.pycdf.const.CDF_EPOCH16.value:
+                    spacepy.pycdf.lib.v_epoch16_to_datetime,
+                    spacepy.pycdf.const.CDF_TIME_TT2000.value:
+                    spacepy.pycdf.lib.v_tt2000_to_datetime
+                }[v.type()](expected)
+                errs.append(
+                    'FILLVAL {} ({}), should be {} ({}) for variable type {}.'
+                    .format(
+                        actual,
+                        v.attrs['FILLVAL'],
+                        expected,
+                        converted_expected,
+                        spacepy.pycdf.lib.cdftypenames[v.type()]))
+            else:
+                errs.append(
+                    'FILLVAL {}, should be {} for variable type {}.'.format(
+                        actual, expected,
+                        spacepy.pycdf.lib.cdftypenames[v.type()]))
+        return errs
+
+    @classmethod
     def recordcount(cls, v):
         """Check that the DEPEND_0 has same record count as variable
 
@@ -391,13 +463,16 @@ class VariableChecks(object):
         minval, maxval = spacepy.pycdf.lib.get_minmax(v.type())
         if rng:
             data = v[...]
+            is_fill = False
             if 'FILLVAL' in v.attrs:
-                if numpy.issubdtype(v.dtype, numpy.float):
+                filldtype = spacepy.pycdf.lib.numpytypedict.get(
+                    v.attrs.type('FILLVAL'), object)
+                if numpy.issubdtype(v.dtype, numpy.floating) \
+                   and numpy.issubdtype(filldtype, numpy.floating):
                     is_fill = numpy.isclose(data, v.attrs['FILLVAL'])
-                else:
+                elif numpy.can_cast(numpy.asanyarray(v.attrs['FILLVAL']),
+                                    v.dtype):
                     is_fill = data == v.attrs['FILLVAL']
-            else:
-                is_fill = numpy.zeros(shape=vshape, dtype=numpy.bool)
         for which in (whichmin, whichmax):
             if not which in v.attrs:
                 continue
@@ -424,8 +499,18 @@ class VariableChecks(object):
                     continue
                 if firstdim: #Add pseudo-record dim
                     attrval = numpy.reshape(attrval, (1, -1))
-            if numpy.any((attrval < minval)) or numpy.any((attrval > maxval)):
-                errs.append('{} ({}) outside data range ({},{}).'.format(
+            # min, max, variable data all same dtype
+            if not numpy.can_cast(numpy.asanyarray(attrval),
+                                  numpy.asanyarray(minval).dtype):
+                errs.append(
+                    '{} type {} not comparable to variable type {}.'.format(
+                        which,
+                        spacepy.pycdf.lib.cdftypenames[v.attrs.type(which)],
+                        spacepy.pycdf.lib.cdftypenames[v.type()]
+                    ))
+                continue # Cannot do comparisons
+            if numpy.any((minval > attrval)) or numpy.any((maxval < attrval)):
+                errs.append('{} ({}) outside valid data range ({},{}).'.format(
                     which, attrval[0, :] if multidim else attrval,
                     minval, maxval))
             if not rng or not len(v): #nothing to compare
@@ -595,7 +680,7 @@ class FileChecks(object):
     .. automethod:: times
 
     """
-    #When adding new tests, add to list above, and the list in all()
+    #When adding new tests, add to list above.
     #Validation failures should be formatted as a sentence (initial cap,
     #closing period).
 
@@ -634,7 +719,9 @@ class FileChecks(object):
         'Var: No FIELDNAM attribute.']
         """
         #Update this list when adding new test functions
-        callme = (cls.empty_entry, cls.filename, cls.time_monoton, cls.times,)
+        callme = [func for name, func in inspect.getmembers(cls)
+                  if not name.startswith('_') and not name.endswith('_')
+                  and callable(func) and name != 'all']
         errors = []
         for func in callme:
             try:
@@ -642,7 +729,7 @@ class FileChecks(object):
             except:
                 if catch:
                     errors.append('Test {} did not complete.'.format(
-                        f.__name__))
+                        func.__name__))
                 else:
                     raise
 
@@ -800,10 +887,10 @@ class FileChecks(object):
         return errs
 
 
-def fillval(v): 
+def fillval(v, ret=False):
     """Set ISTP-compliant FILLVAL on a variable
 
-    Sets a CDF variable's `FILLVAL
+    Sets or returns a CDF variable's `FILLVAL
     <https://spdf.gsfc.nasa.gov/istp_guide/vattributes.html#FILLVAL>`_
     attribute to the value required by ISTP (based on variable type).
 
@@ -811,6 +898,18 @@ def fillval(v):
     ----------
     v : :class:`~spacepy.pycdf.Var`
         CDF variable to update
+
+    Other Parameters
+    ----------------
+    ret : boolean
+        If True, return the value instead of setting it (Default False, set).
+
+    Returns
+    -------
+    various
+        If ``ret`` is True, returns the correct value for variable type (which
+        may be of various Python types).  Otherwise sets the value and returns
+        ``None``.
 
     Examples
     --------
@@ -846,9 +945,12 @@ def fillval(v):
             (spacepy.pycdf.const.CDF_DOUBLE, spacepy.pycdf.const.CDF_REAL8),
     ):
         fillvals[cdf_t.value] = fillvals[equiv.value]
+    value = fillvals[v.type()]
+    if ret:
+        return value
     if 'FILLVAL' in v.attrs:
         del v.attrs['FILLVAL']
-    v.attrs.new('FILLVAL', data=fillvals[v.type()], type=v.type())
+    v.attrs.new('FILLVAL', data=value, type=v.type())
 
 
 def format(v, use_scaleminmax=False, dryrun=False):

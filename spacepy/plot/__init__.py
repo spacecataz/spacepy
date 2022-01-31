@@ -26,10 +26,6 @@ of color, it may be better to use one of the alternatives::
     splot.style('polar') # designed for filled polar plots
     splot.revert_style() # put the style back to matplotlib defaults
 
-For those constrained by institutional computing, we also provide the
-new colormaps developed for matplotlib v2. These colormaps are designed 
-to be perceptually uniform, and hence colorblind-friendly.
-
 Authors: Brian Larsen and Steve Morley
 Institution: Los Alamos National Laboratory
 Contact: balarsen@lanl.gov
@@ -53,7 +49,7 @@ Copyright 2011-2016 Los Alamos National Security, LLC.
    set_target
    shared_ylabel
    solarRotationPlot
-   spectrogram
+   Spectrogram
    style
    timestamp
    add_arrows
@@ -67,7 +63,6 @@ several submodules listed below
     :template: clean_module.rst
 
     carrington
-    colourmaps
     spectrogram
     utils
 
@@ -77,6 +72,7 @@ try:
 except ImportError:
     from collections import Mapping
 import os
+import warnings
 import numpy as np
 import matplotlib as mpl
 from matplotlib.patches import Wedge
@@ -89,15 +85,6 @@ from .. import config
 from .spectrogram import *
 from .utils import *
 from .carrington import *
-from .colourmaps import plasma as _plasma
-from .colourmaps import plasma_r as _plasma_r
-from .colourmaps import viridis as _viridis
-from .colourmaps import viridis_r as _viridis_r
-
-plt.register_cmap(name='plasma', cmap=_plasma)
-plt.register_cmap(name='plasma_r', cmap=_plasma_r)
-plt.register_cmap(name='viridis', cmap=_viridis)
-plt.register_cmap(name='viridis_r', cmap=_viridis_r)
 
 def plot(*args, **kwargs):
     '''Convenience wrapper for matplotlib's plot function
@@ -169,7 +156,6 @@ def style(look=None, cmap='plasma'):
     try:
         plt.style.use(usestyle)
     except AttributeError: #plt.style.use not available, old matplotlib?
-        import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             dum = mpl.rc_params_from_file(usestyle)
@@ -191,7 +177,6 @@ if config['apply_plot_styles']:
 def revert_style():
     '''Revert plot style settings to those in use prior to importing spacepy.plot
     '''
-    import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for key in oldParams:

@@ -13,6 +13,8 @@ import warnings
 
 import numpy
 import numpy.testing
+import spacepy_testing
+import spacepy
 import spacepy.pycdf
 import spacepy.pycdf.const
 import spacepy.pycdf.istp
@@ -24,9 +26,18 @@ class ISTPTestsBase(unittest.TestCase):
     def setUp(self):
         """Setup: make an empty, open, writeable CDF"""
         self.tempdir = tempfile.mkdtemp()
-        self.cdf = spacepy.pycdf.CDF(os.path.join(
-            self.tempdir, 'source_descriptor_datatype_19990101_v00.cdf'),
-                                     create=True)
+        # We know what the backward-compatible default is, suppress it.
+        warnings.filterwarnings(
+            'ignore',
+            message=r'^spacepy\.pycdf\.lib\.set_backward not called.*$',
+            category=DeprecationWarning,
+            module='^spacepy.pycdf$')
+        try:
+            self.cdf = spacepy.pycdf.CDF(os.path.join(
+                self.tempdir, 'source_descriptor_datatype_19990101_v00.cdf'),
+                                         create=True)
+        finally:
+            del warnings.filters[0]
 
     def tearDown(self):
         """Delete the empty cdf"""
@@ -39,6 +50,23 @@ class ISTPTestsBase(unittest.TestCase):
 
 class VariablesTests(ISTPTestsBase):
     """Tests of variable-checking functions"""
+    longMessage = True
+
+    def testAllVarFailure(self):
+        """Call variable checks with a known bad one"""
+        class BadTestClass(spacepy.pycdf.istp.VariableChecks):
+            @classmethod
+            def varraiseserror(cls, v):
+                raise RuntimeError('Bad')
+        data = spacepy.dmarray([1, 2, 3], dtype=numpy.int8, attrs={
+            'FIELDNAM': 'var1',
+            'FILLVAL': -128,
+            })
+        var = self.cdf.new('var1', data=data)
+        errs = BadTestClass.all(var, catch=True)
+        self.assertEqual(
+            ['Test varraiseserror did not complete.'],
+            errs)
 
     def testEmptyEntries(self):
         """Are there any CHAR entries of empty string"""
@@ -55,14 +83,14 @@ class VariablesTests(ISTPTestsBase):
         self.cdf['var1'].attrs['DEPEND_0'] = 'var2'
         errs = spacepy.pycdf.istp.VariableChecks.depends(self.cdf['var1'])
         self.assertEqual(1, len(errs))
-        self.assertEqual('DEPEND_0 variable var2 missing', errs[0])
+        self.assertEqual('DEPEND_0 variable var2 missing.', errs[0])
         self.cdf['var2'] = [1, 2, 3]
         self.assertEqual(
             0, len(spacepy.pycdf.istp.VariableChecks.depends(self.cdf['var1'])))
         self.cdf['var1'].attrs['DELTA_PLUS_VAR'] = 'foobar'
         errs = spacepy.pycdf.istp.VariableChecks.depends(self.cdf['var1'])
         self.assertEqual(1, len(errs))
-        self.assertEqual('DELTA_PLUS_VAR variable foobar missing', errs[0])
+        self.assertEqual('DELTA_PLUS_VAR variable foobar missing.', errs[0])
 
     def testDeltas(self):
         """DELTA variables"""
@@ -160,6 +188,23 @@ class VariablesTests(ISTPTestsBase):
              'VALIDMIN type CDF_INT2 does not match variable type CDF_INT4.'],
             errs)
 
+    def testValidRangeIncompatibleType(self):
+        """Validmin/validmax can't be compared to variable type"""
+        v = self.cdf.new('var1', data=[1, 2, 3],
+                         type=spacepy.pycdf.const.CDF_INT4)
+        v.attrs.new('VALIDMIN', data='2')
+        v.attrs.new('VALIDMAX', data='5')
+        errs = spacepy.pycdf.istp.VariableChecks.validrange(v)
+        errs.sort()
+        self.assertEqual(4, len(errs))
+        self.assertEqual(
+            ['VALIDMAX type CDF_CHAR does not match variable type CDF_INT4.',
+             'VALIDMAX type CDF_CHAR not comparable to variable type CDF_INT4.',
+             'VALIDMIN type CDF_CHAR does not match variable type CDF_INT4.',
+             'VALIDMIN type CDF_CHAR not comparable to variable type CDF_INT4.'
+            ],
+            errs)
+
     def testValidRangeNRV(self):
         """Validmin/validmax"""
         v = self.cdf.new('var1', recVary=False, data=[1, 2, 3])
@@ -207,12 +252,12 @@ class VariablesTests(ISTPTestsBase):
 
     def testValidRangeFillvalFloat(self):
         """Validmin/validmax with fillval set, floating-point"""
-        #This is a bit contrived to force a difference that's only
-        #in terms of the precision of the float
         v = self.cdf.new('var1', recVary=False, data=[1, 2, 3],
                          type=spacepy.pycdf.const.CDF_DOUBLE)
         v.attrs['VALIDMIN'] = 0
         v.attrs['VALIDMAX'] = 10
+        #This is a bit contrived to force a difference between attribute
+        #and value that's only the precision of the float
         v.attrs.new('FILLVAL', -1e31, type=spacepy.pycdf.const.CDF_FLOAT)
         self.assertEqual(
             0, len(spacepy.pycdf.istp.VariableChecks.validrange(v)))
@@ -226,10 +271,24 @@ class VariablesTests(ISTPTestsBase):
         self.assertEqual(
             0, len(spacepy.pycdf.istp.VariableChecks.validrange(v)))
 
+    def testValidRangeFillvalFloatWrongType(self):
+        """Validmin/validmax with fillval, floating-point, but fillval string"""
+        v = self.cdf.new('var1', recVary=False, data=[-1e31, 2, 3],
+                         type=spacepy.pycdf.const.CDF_DOUBLE)
+        v.attrs['VALIDMIN'] = 0
+        v.attrs['VALIDMAX'] = 10
+        v.attrs.new('FILLVAL', b'badstuff', type=spacepy.pycdf.const.CDF_CHAR)
+        expected = ['Value -1e+31 at index 0 under VALIDMIN 0.0.']
+        errs = spacepy.pycdf.istp.VariableChecks.validrange(v)
+        self.assertEqual(len(expected), len(errs))
+        for a, e in zip(sorted(errs), sorted(expected)):
+            self.assertEqual(e, a)
+
     def testValidRangeFillvalDatetime(self):
         """Validmin/validmax with fillval set, Epoch var"""
         v = self.cdf.new(
-            'var1', data=[datetime.datetime(2010, 1, i) for i in range(1, 6)])
+            'var1', data=[datetime.datetime(2010, 1, i) for i in range(1, 6)],
+            type=spacepy.pycdf.const.CDF_EPOCH)
         v.attrs['VALIDMIN'] = datetime.datetime(2010, 1, 1)
         v.attrs['VALIDMAX'] = datetime.datetime(2010, 1, 31)
         v.attrs['FILLVAL'] = datetime.datetime(9999, 12, 31, 23, 59, 59, 999000)
@@ -245,6 +304,69 @@ class VariablesTests(ISTPTestsBase):
         v[-1] = datetime.datetime(9999, 12, 31, 23, 59, 59, 999000)
         self.assertEqual(
             0, len(spacepy.pycdf.istp.VariableChecks.validrange(v)))
+
+    def testFillval(self):
+        """Test for fillval presence, type, value"""
+        v = self.cdf.new('var1', data=[1, 2, 3],
+                         type=spacepy.pycdf.const.CDF_INT2)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(1, len(errs))
+        self.assertEqual(
+            'No FILLVAL attribute.',
+            errs[0])
+        v.attrs.new('FILLVAL', -5, type=spacepy.pycdf.const.CDF_DOUBLE)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual([
+            'FILLVAL -5.0, should be -32768 for variable type CDF_INT2.',
+            'FILLVAL type CDF_DOUBLE does not match variable type CDF_INT2.',
+            ],
+            sorted(errs))
+        v.attrs['FILLVAL'] = -32768
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual([
+            'FILLVAL type CDF_DOUBLE does not match variable type CDF_INT2.',
+            ],
+            sorted(errs))
+        del v.attrs['FILLVAL']
+        v.attrs.new('FILLVAL', -32768, type=spacepy.pycdf.const.CDF_INT2)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(0, len(errs))
+
+    def testFillvalFloat(self):
+        """Test for fillval being okay when off by float precision"""
+        v = self.cdf.new('var1', data=[1, 2, 3],
+                         type=spacepy.pycdf.const.CDF_FLOAT)
+        v.attrs.new('FILLVAL', -1e31, type=spacepy.pycdf.const.CDF_FLOAT)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(0, len(errs), '\n'.join(errs))
+
+    def testFillvalString(self):
+        """Test for fillval being okay in a string"""
+        v = self.cdf.new('var1', data=['foo', 'bar'],
+                                       type=spacepy.pycdf.const.CDF_CHAR)
+        v.attrs.new('FILLVAL', ' ', type=spacepy.pycdf.const.CDF_CHAR)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(0, len(errs), '\n'.join(errs))
+
+    def testFillvalEpoch(self):
+        """Test for fillval being okay with epoch"""
+        v = self.cdf.new('Epoch', type=spacepy.pycdf.const.CDF_EPOCH)
+        v.attrs.new(
+            'FILLVAL', -1e31,
+            type=spacepy.pycdf.const.CDF_EPOCH)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(0, len(errs), '\n'.join(errs))
+        del v.attrs['FILLVAL']
+        v.attrs.new(
+            'FILLVAL', datetime.datetime(2000, 1, 1),
+            type=spacepy.pycdf.const.CDF_EPOCH)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(1, len(errs), '\n'.join(errs))
+        self.assertEqual(
+            'FILLVAL {} (2000-01-01 00:00:00), should be -1e+31 '
+            '(9999-12-31 23:59:59.999000) for variable type CDF_EPOCH.'
+            .format(6.3113904e+13), #py2k and 3k format this differently
+            errs[0])
 
     def testMatchingRecordCount(self):
         """Same number of records for DEPEND_0"""
@@ -373,7 +495,7 @@ class VariablesTests(ISTPTestsBase):
         self.assertEqual(2, len(errs))
         errs.sort()
         self.assertEqual(
-            ['SCALEMIN (-200) outside data range (-128,127).',
+            ['SCALEMIN (-200) outside valid data range (-128,127).',
              'SCALEMIN type CDF_INT2 does not match variable type CDF_BYTE.'
              ],
              errs)
@@ -382,7 +504,7 @@ class VariablesTests(ISTPTestsBase):
         self.assertEqual(3, len(errs))
         errs.sort()
         self.assertEqual(
-            ['SCALEMIN (200) outside data range (-128,127).',
+            ['SCALEMIN (200) outside valid data range (-128,127).',
              'SCALEMIN > SCALEMAX.',
              'SCALEMIN type CDF_INT2 does not match variable type CDF_BYTE.'
              ],
@@ -392,9 +514,9 @@ class VariablesTests(ISTPTestsBase):
         self.assertEqual(5, len(errs))
         errs.sort()
         self.assertEqual(
-            ['SCALEMAX (-200) outside data range (-128,127).',
+            ['SCALEMAX (-200) outside valid data range (-128,127).',
              'SCALEMAX type CDF_INT2 does not match variable type CDF_BYTE.',
-             'SCALEMIN (200) outside data range (-128,127).',
+             'SCALEMIN (200) outside valid data range (-128,127).',
              'SCALEMIN > SCALEMAX.',
              'SCALEMIN type CDF_INT2 does not match variable type CDF_BYTE.'
              ],
@@ -404,9 +526,9 @@ class VariablesTests(ISTPTestsBase):
         self.assertEqual(4, len(errs))
         errs.sort()
         self.assertEqual(
-            ['SCALEMAX (200) outside data range (-128,127).',
+            ['SCALEMAX (200) outside valid data range (-128,127).',
              'SCALEMAX type CDF_INT2 does not match variable type CDF_BYTE.',
-             'SCALEMIN (200) outside data range (-128,127).',
+             'SCALEMIN (200) outside valid data range (-128,127).',
              'SCALEMIN type CDF_INT2 does not match variable type CDF_BYTE.'
              ],
              errs)
@@ -421,7 +543,7 @@ class VariablesTests(ISTPTestsBase):
         self.assertEqual(2, len(errs))
         errs.sort()
         self.assertEqual([
-            'SCALEMAX ([300 320]) outside data range (-128,127).',
+            'SCALEMAX ([300 320]) outside valid data range (-128,127).',
             'SCALEMAX type CDF_INT2 does not match variable type CDF_BYTE.'
             ],
             errs)
@@ -499,7 +621,39 @@ class VariablesTests(ISTPTestsBase):
         v.attrs['FIELDNAM'] = 'var1'
         self.assertEqual(
             0, len(spacepy.pycdf.istp.VariableChecks.fieldnam(v)))
-        
+
+
+@unittest.skipIf(spacepy.pycdf.lib.version[0] < 3,
+                 'Requires CDF library 3 or newer')
+class VariablesTestsNew(ISTPTestsBase):
+    """Tests of variable-checking functions that require CDF 3"""
+    longMessage = True
+
+    def setUp(self):
+        """Disable backward-compat before making test CDF"""
+        spacepy.pycdf.lib.set_backward(False)
+        super(VariablesTestsNew, self).setUp()
+        spacepy.pycdf.lib.set_backward(True)
+
+    def testFillvalEpoch16(self):
+        """Test for fillval being okay with epoch16"""
+        v = self.cdf.new('Epoch', type=spacepy.pycdf.const.CDF_EPOCH16)
+        v.attrs.new(
+            'FILLVAL', (-1e31, -1e31),
+            type=spacepy.pycdf.const.CDF_EPOCH16)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(0, len(errs), '\n'.join(errs))
+
+    @unittest.skipIf(not spacepy.pycdf.lib.supports_int8,
+                     'Requires TT2000 support in CDF library')
+    def testFillvalTT2000(self):
+        """Test for fillval being okay with TT2000"""
+        v = self.cdf.new('Epoch', type=spacepy.pycdf.const.CDF_TIME_TT2000)
+        v.attrs.new(
+            'FILLVAL', -9223372036854775808,
+            type=spacepy.pycdf.const.CDF_TIME_TT2000)
+        errs = spacepy.pycdf.istp.VariableChecks.fillval(v)
+        self.assertEqual(0, len(errs), '\n'.join(errs))
 
         
 class FileTests(ISTPTestsBase):
@@ -515,8 +669,27 @@ class FileTests(ISTPTestsBase):
         self.cdf.attrs['Logical_file_id'] = \
             'source_descriptor_datatype_19990101_v00'
         errs = spacepy.pycdf.istp.FileChecks.all(self.cdf)
-        self.assertEqual(1, len(errs))
-        self.assertEqual('var1: DEPEND_0 variable var2 missing', errs[0])
+        self.assertEqual(2, len(errs))
+        self.assertEqual([
+            'var1: DEPEND_0 variable var2 missing.',
+            'var1: No FILLVAL attribute.',
+            ],
+            sorted(errs))
+
+    def testAllFailure(self):
+        """Call file checks with a known bad one"""
+        self.cdf.attrs['Logical_source'] = \
+            'source_descriptor_datatype'
+        self.cdf.attrs['Logical_file_id'] = \
+            'source_descriptor_datatype_19990101_v00'
+        class BadTestClass(spacepy.pycdf.istp.FileChecks):
+            @classmethod
+            def raiseserror(cls, f):
+                raise RuntimeError('Bad')
+        errs = BadTestClass.all(self.cdf, catch=True)
+        self.assertEqual(
+            ['Test raiseserror did not complete.'],
+            errs)
 
     def testEmptyEntries(self):
         """Are there any CHAR gEntries of empty string"""
@@ -556,7 +729,9 @@ class FileTests(ISTPTestsBase):
 
     def testTimesMonoton(self):
         """Test monotonic time"""
-        self.cdf['Epoch'] = [datetime.datetime(1999, 1, 1, i) for i in range(3)]
+        self.cdf.new('Epoch',
+                     data=[datetime.datetime(1999, 1, 1, i) for i in range(3)],
+                     type=spacepy.pycdf.const.CDF_EPOCH)
         self.cdf['Epoch'].append(datetime.datetime(1999, 1, 1, 5))
         self.cdf['Epoch'].append(datetime.datetime(1999, 1, 1, 4))
         errs = spacepy.pycdf.istp.FileChecks.time_monoton(self.cdf)
@@ -565,7 +740,16 @@ class FileTests(ISTPTestsBase):
 
     def testTimes(self):
         """Compare filename to Epoch times"""
-        self.cdf['Epoch'] = [datetime.datetime(1999, 1, 1, i) for i in range(3)]
+        warnings.filterwarnings(
+            'ignore',
+            message=r'^No type specified for time input; assuming .*$',
+            category=DeprecationWarning,
+            module='^spacepy.pycdf$')
+        try:
+            self.cdf['Epoch'] = [datetime.datetime(1999, 1, 1, i)
+                                 for i in range(3)]
+        finally:
+            del warnings.filters[0]
         self.cdf['Epoch'].append(datetime.datetime(1999, 1, 2, 0))
         errs = spacepy.pycdf.istp.FileChecks.times(self.cdf)
         self.assertEqual(1, len(errs))
@@ -573,7 +757,16 @@ class FileTests(ISTPTestsBase):
         del self.cdf['Epoch'][-1]
         errs = spacepy.pycdf.istp.FileChecks.times(self.cdf)
         self.assertEqual(0, len(errs))
-        self.cdf['Epoch'] = [datetime.datetime(1999, 1, 2, i) for i in range(3)]
+        warnings.filterwarnings(
+            'ignore',
+            message=r'^No type specified for time input; assuming .*$',
+            category=DeprecationWarning,
+            module='^spacepy.pycdf$')
+        try:
+            self.cdf['Epoch'] = [datetime.datetime(1999, 1, 2, i)
+                                 for i in range(3)]
+        finally:
+            del warnings.filters[0]
         errs = spacepy.pycdf.istp.FileChecks.times(self.cdf)
         self.assertEqual(1, len(errs))
         self.assertEqual('Epoch: date 19990102 doesn\'t match file '
@@ -668,16 +861,22 @@ class VarBundleChecksBase(unittest.TestCase):
             self.tempdir, 'source_descriptor_datatype_19990101_v00.cdf'),
                                      create=True)
         spacepy.pycdf.lib.set_backward(True)
-        pth = os.path.dirname(os.path.abspath(__file__))
-        self.incdf = spacepy.pycdf.CDF(os.path.join(pth, self.testfile))
+        self.incdf = spacepy.pycdf.CDF(os.path.join(
+            spacepy_testing.testsdir, self.testfile))
 
     def tearDown(self):
         """Close CDFs; delete output"""
+        # Suppress did-not-compress warnings on close
+        warnings.filterwarnings(
+            'ignore', r'^DID_NOT_COMPRESS.*',
+            spacepy.pycdf.CDFWarning, r'^spacepy\.pycdf$')
         try:
             self.incdf.close()
             self.outcdf.close()
         except:
             pass
+        finally:
+            del warnings.filters[0]
         shutil.rmtree(self.tempdir)
 
 
@@ -882,9 +1081,11 @@ class VarBundleChecks(VarBundleChecksBase):
         bundle = spacepy.pycdf.istp.VarBundle(
             self.incdf['SectorRateScalersCounts'])
         bundle.slice(1, [2, 3, 5])
-        with warnings.catch_warnings(record=True) as w:
+        with spacepy_testing.assertDoesntWarn(
+                self, 'always',
+                r'Using a non-tuple sequence for multidimensional indexing',
+                FutureWarning, r'spacepy\.pycdf\.istp$'):
             bundle.output(self.outcdf)
-        self.assertEqual(0, len(w)) #verify no deprecation warning
         numpy.testing.assert_array_equal(
             self.outcdf['SectorRateScalersCounts'][...],
             self.incdf['SectorRateScalersCounts'][...][:, [2, 3, 5], ...])
@@ -999,14 +1200,19 @@ class VarBundleChecks(VarBundleChecksBase):
         counts = self.incdf['SectorRateScalersCounts'][...]
         counts[counts < 0] = numpy.nan
         #suppress bad value warnings
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', 'Mean of empty slice', RuntimeWarning)
             expected = numpy.nanmean(counts, axis=2)
         expected[numpy.isnan(expected)] = -1e31
         numpy.testing.assert_allclose(
             expected, self.outcdf['SectorRateScalersCounts'][...])
         sigma = self.incdf['SectorRateScalersCountsSigma'][...]
         sigma[sigma < 0] = numpy.nan
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', r'invalid value encountered in (?:true_)divide$',
+                RuntimeWarning)
             expected = numpy.sqrt(numpy.nansum(sigma ** 2, axis=2)) \
                         / (~numpy.isnan(sigma)).sum(axis=2)
         expected[numpy.isnan(expected)] = -1e31
@@ -1174,6 +1380,17 @@ class VarBundleChecksHOPE(VarBundleChecksBase):
     testfile = os.path.join('data',
                             'rbspa_rel04_ect-hope-PA-L3_20121201_v0.0.0.cdf')
     longMessage = True
+
+    def tearDown(self):
+        """Block warnings from CDF closing"""
+        warnings.filterwarnings(
+            'ignore', message='^DID_NOT_COMPRESS.*$',
+            category=spacepy.pycdf.CDFWarning,
+            module='^spacepy.pycdf')
+        try:
+            super(VarBundleChecksHOPE, self).tearDown()
+        finally:
+            del warnings.filters[0]
 
     def testSortOrder(self):
         """Check sort order of variables"""

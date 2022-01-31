@@ -91,13 +91,17 @@ SpacePy uses these variables to find the library.
 ffnet
 =====
 
-ffnet can be installed from ``pip``; if the wrong Fortran compiler is
-found try::
+ffnet is required for :mod:`~spacepy.LANLstar`. Installing SpacePy
+from ``pip`` will automatically attempt to compile and install
+``ffnet`` on Linux (it is not automatically installed by binary
+installers, but SpacePy does not currently provide binaries for
+Linux.)  Otherwise ``ffnet`` can be installed from ``pip``. In either
+case, if the wrong Fortran compiler is found try::
 
   FC_VENDOR=gfortran pip install ffnet
 
 It can also be installed from 
-`sourcea <http://ffnet.sourceforge.net/install.html>`_.
+`source <http://ffnet.sourceforge.net/install.html>`_.
 Compilation requires f2py (from numpy), installed per the
 distribution-specific directions above. Untar and cd into the
 resulting directory. Then build::

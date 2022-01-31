@@ -30,8 +30,9 @@ from numpy import array
 from scipy import inf
 from scipy.stats import poisson
 
+import spacepy_testing
+import spacepy
 import spacepy.toolbox as tb
-import spacepy.time as st
 import spacepy.lib
 
 #Py3k compatibility renamings
@@ -94,12 +95,19 @@ class PickleAssembleTests(unittest.TestCase):
     def testSaveLoadPickleCompress(self):
         """savePickle should write a pickle to disk and loadPickle should load it (compressed)"""
         tb.savepickle(os.path.join(self.tempdir, 'test_pickle_1.pkl'), self.D1, compress=True)
-        files = glob.glob(os.path.join(self.tempdir, '*.pkl.gz'))
-        self.assertTrue(os.path.join(self.tempdir,'test_pickle_1.pkl.gz') in files)
+        files = os.listdir(self.tempdir)
+        self.assertTrue('test_pickle_1.pkl.gz' in files)
+        self.assertFalse('test_pickle_1.pkl' in files)
         DD = tb.loadpickle(os.path.join(self.tempdir,'test_pickle_1.pkl'))
         self.assertEqual(self.D1, DD)
         DD = tb.loadpickle(os.path.join(self.tempdir,'test_pickle_1.pkl.gz'))
         self.assertEqual(self.D1, DD)
+        # Save without specifying compression, make sure saves compressed
+        # (because compressed file already exists)
+        tb.savepickle(os.path.join(self.tempdir, 'test_pickle_1.pkl'), self.D1)
+        files = os.listdir(self.tempdir)
+        self.assertTrue('test_pickle_1.pkl.gz' in files)
+        self.assertFalse('test_pickle_1.pkl' in files)
 
     def test_assemble(self):
         tb.savepickle(os.path.join(self.tempdir, 'test_pickle_1.pkl'), self.D1)
@@ -113,53 +121,32 @@ class PickleAssembleTests(unittest.TestCase):
 
 
 class SimpleFunctionTests(unittest.TestCase):
-    def test_quaternionNormalize(self):
-        """quaternionNormalize should have known results"""
-        tst = tb.quaternionNormalize([0.707, 0, 0.707, 0.2])
-        ans = [ 0.69337122,  0.        ,  0.69337122,  0.19614462]
-        numpy.testing.assert_array_almost_equal(ans, tst)
 
-    def test_quaternionNormalize_2(self):
-        """quaternionNormalize should have known result and magnitude 1"""
-        tst1 = tb.quaternionNormalize([1, 0, 1, 0], scalarPos='first')
-        tst2 = tb.quaternionNormalize([1, 0, 1, 0], scalarPos='last')
-        ans = [0.70710678, 0.0, 0.70710678, 0]
-        numpy.testing.assert_array_almost_equal(ans, tst1)
-        numpy.testing.assert_array_almost_equal(ans, tst2)
-        numpy.testing.assert_almost_equal(1.0, numpy.linalg.norm(tst1))
-        numpy.testing.assert_almost_equal(1.0, numpy.linalg.norm(tst2))
-
-    def test_quaternionNormalize_small(self):
-        """test quaternionNormalize for very small values"""
-        tst1 = tb.quaternionNormalize([1e-15, 0, 1e-15, 0], scalarPos='first')
-        tst2 = tb.quaternionNormalize([1e-15, 0, 1e-15, 0], scalarPos='last')
-        ans1 = [1.0, 0.0, 0.0, 0.0]
-        ans2 = [0.0, 0.0, 0.0, 1.0]
-        numpy.testing.assert_array_almost_equal(ans1, tst1)
-        numpy.testing.assert_array_almost_equal(ans2, tst2)
-
-    def test_quaternionMultiply(self):
-        """quaternionMultiply should have known results"""
-        q1 = [1.0, 0.0, 0.0, 0.0]
-        q2 = [0.0, 0.0, 0.0, 1.0]
-        ans = [0.0, 0.0, 0.0, 1.0]
-        tst = tb.quaternionMultiply(q2, q1, scalarPos='first')
-        numpy.testing.assert_array_almost_equal(ans, tst)
-
-    def test_quaternionConjugate_last(self):
-        tst = tb.quaternionConjugate([0.707, 0, 0.707, 0.2], scalarPos='last')
-        ans = [ -0.707,  -0.        ,  -0.707,  0.2]
-        numpy.testing.assert_array_almost_equal(ans, tst)
-
-    def test_quaternionConjugate_first(self):
-        tst = tb.quaternionConjugate([0.2, 0.707, 0, 0.707], scalarPos='first')
-        ans = [ 0.2,  -0.707,  -0.        ,  -0.707]
-        numpy.testing.assert_array_almost_equal(ans, tst)
+    def test_humansort(self):
+        """human_sort should give known answers"""
+        dat = ['1.10', '1.2', '1.3', '1.20']
+        self.assertEqual(
+            ['1.2', '1.3', '1.10', '1.20'],
+            tb.human_sort(dat))
+        dat = ['r1.txt', 'r10.txt', 'r2.txt']
+        dat.sort() # Standard Python sort
+        self.assertEqual(['r1.txt', 'r10.txt', 'r2.txt'], dat)
+        self.assertEqual(['r1.txt', 'r2.txt', 'r10.txt'],
+                         tb.human_sort(dat))
+        dat = [5, 1, 3, -1]
+        self.assertEqual([-1, 1, 3, 5], tb.human_sort(dat))
 
     def test_indsFromXrange(self):
         """indsFromXrange should have known result"""
         foo = xrange(23, 39)
         self.assertEqual([23, 39], tb.indsFromXrange(foo))
+        foo = xrange(5)
+        self.assertEqual([0, 5], tb.indsFromXrange(foo))
+
+    def test_indsFromXrange_zerolen(self):
+        """indsFromXrange with zero length range"""
+        foo = xrange(20, 20)  # empty
+        self.assertEqual([20, 20], tb.indsFromXrange(foo))
 
     def test_interweave(self):
         """interweave should have known result"""
@@ -172,7 +159,7 @@ class SimpleFunctionTests(unittest.TestCase):
 
     def test_getNamedPath(self):
         """getNamedPath should have known result"""
-        curloc = os.path.dirname(os.path.abspath(__file__))
+        curloc = spacepy_testing.testsdir
         tmpdir = os.path.join(curloc, 'tmp', 'test1', 'test2')
         os.makedirs(tmpdir)
         ans = ['tests', 'tmp', 'test1']
@@ -189,7 +176,7 @@ class SimpleFunctionTests(unittest.TestCase):
         """getNamedPath should return None if directory does not exist"""
         import string, random
         len_fn = 16 #should be exceedingly unlikely to exist...
-        dname = ''.join(random.choice(string.ascii_uppercase + 
+        dname = ''.join(random.choice(string.ascii_uppercase +
                         string.digits) for _ in range(len_fn))
         res = tb.getNamedPath(dname)
         self.assertTrue(res is None)
@@ -200,10 +187,33 @@ class SimpleFunctionTests(unittest.TestCase):
         output = StringIO.StringIO()
         sys.stdout = output
         self.assertEqual(tb.progressbar(0, 1, 100), None)
+        self.assertEqual(tb.progressbar(100, 1, 100), None)
         result = output.getvalue()
         output.close()
-        self.assertEqual(result, "\rDownload Progress ...0%")
+        self.assertEqual(result, "\rDownload Progress ...0%"
+                         "\rDownload Progress ...100%\n")
         sys.stdout = realstdout
+
+    def test_progressbar_bigblock(self):
+        """progressbar should not go over 100% with big blocks"""
+        realstdout = sys.stdout
+        output = StringIO.StringIO()
+        sys.stdout = output
+        try:
+            for i in range(4):
+                self.assertEqual(tb.progressbar(i, 100, 205), None)
+            result = output.getvalue()
+        finally:
+            sys.stdout = realstdout
+            output.close()
+        self.assertEqual(
+            result,
+            "\rDownload Progress ...0%"
+            "\rDownload Progress ...49%"
+            "\rDownload Progress ...98%"
+            "\rDownload Progress ...100%"
+            "\n"
+        )
 
     def test_query_yes_no(self):
         '''query_yes_no should return known strings for known input'''
@@ -243,17 +253,18 @@ class SimpleFunctionTests(unittest.TestCase):
 
     def test_interpol_baddata(self):
         """interpol should give known results in presence of fill values"""
-        ans = array([ 0.5,  1.5,  2.5,  3.5,  4.5])
+        ans = array([0.5, 1.5, 2.5, 3.5, 4.5])
         x = numpy.arange(10)
         y = numpy.arange(10)
-        numpy.testing.assert_equal(ans, tb.interpol(numpy.arange(5)+0.5, x, y))
+        numpy.testing.assert_almost_equal(ans, tb.interpol(numpy.arange(5)+0.5, x, y))
         # now test with baddata
         ans = numpy.ma.masked_array([0.5, 1.5, 2.5, 3.5, 4.5],
-            mask = [False,  True,  True, False, False], fill_value = 1e+20)
-        numpy.testing.assert_equal(ans, tb.interpol(numpy.arange(5)+0.5, x, y, baddata=2))
-        #test with baddata at end of array
+                                    mask=[False, True, True, False, False],
+                                    fill_value=1e+20)
+        numpy.testing.assert_almost_equal(ans, tb.interpol(numpy.arange(5)+0.5, x, y, baddata=2))
+        # test with baddata at end of array
         ans = array([1.0, 9.0])
-        numpy.testing.assert_equal(ans, tb.interpol([-1,12], x, y, baddata=0))
+        numpy.testing.assert_almost_equal(ans, tb.interpol([-1, 12], x, y, baddata=0))
 
     def test_interpol_keywords(self):
         """Interpol should give known results with hour and lon keyword wrapping"""
@@ -261,20 +272,21 @@ class SimpleFunctionTests(unittest.TestCase):
         y = list(range(24))*2
         x = list(range(len(y)))
         real_ans = numpy.ma.masked_array([1.5, 10.5, 23.5],
-            mask = False, fill_value = 1e+20)
-        numpy.testing.assert_equal(real_ans, tb.interpol([1.5, 10.5, 23.5], x, y, wrap='hour'))
+                                         mask=False,
+                                         fill_value=1e+20)
+        numpy.testing.assert_almost_equal(real_ans, tb.interpol([1.5, 10.5, 23.5], x, y, wrap='hour'))
         real_ans = numpy.ma.masked_array([1.5, 10.5, 1.5],
-            mask = False, fill_value = 1e+20)
-        numpy.testing.assert_equal(real_ans, tb.interpol([1.5, 10.5, 1.5], x, y)) # as a regression don't need wrap
+                                         mask=False, fill_value=1e+20)
+        numpy.testing.assert_almost_equal(real_ans, tb.interpol([1.5, 10.5, 1.5], x, y))  # as a regression don't need wrap
         # test wrap lon
         y = list(range(360))*2
         x = list(range(len(y)))
         real_ans = numpy.ma.masked_array([1.5, 10.5, 359.5],
-            mask = False, fill_value = 1e+20)
-        numpy.testing.assert_equal(real_ans, tb.interpol([1.5, 10.5, 359.5], x, y, wrap='lon'))
+                                         mask=False, fill_value=1e+20)
+        numpy.testing.assert_almost_equal(real_ans, tb.interpol([1.5, 10.5, 359.5], x, y, wrap='lon'))
         real_ans = numpy.ma.masked_array([1.5, 10.5, 10.5],
-            mask = False, fill_value = 1e+20)
-        numpy.testing.assert_equal(real_ans, tb.interpol([1.5, 10.5, 370.5], x, y)) # as a regression don't need wrap
+                                         mask=False, fill_value=1e+20)
+        numpy.testing.assert_almost_equal(real_ans, tb.interpol([1.5, 10.5, 370.5], x, y)) # as a regression don't need wrap
 
     def test_interpol_arb(self):
         """Interpol should give known results for arbitrary float/int wrapping"""
@@ -292,8 +304,8 @@ class SimpleFunctionTests(unittest.TestCase):
         y = list(range(360))*2
         x = list(range(len(y)))
         real_ans = numpy.ma.masked_array([1.5, 10.5, 359.5],
-            mask = False, fill_value = 1e+20)
-        numpy.testing.assert_equal(real_ans, tb.interpol([1.5, 10.5, 359.5], x, y, wrap=360.0))
+                                         mask=False, fill_value=1e+20)
+        numpy.testing.assert_almost_equal(real_ans, tb.interpol([1.5, 10.5, 359.5], x, y, wrap=360.0))
 
     def test_normalize(self):
         """normalize should give known results, default range"""
@@ -313,24 +325,6 @@ class SimpleFunctionTests(unittest.TestCase):
                                                                                    low=1, high=11))
         numpy.testing.assert_array_almost_equal(array([1.0, 6.0, numpy.nan, 11.0]), tb.normalize(array([1,2,numpy.nan, 3,]),
                                                                                     low=1, high=11))
-
-    def testfeq_equal(self):
-        """feq should return true when they are equal"""
-        val1 = 1.1234
-        val2 = 1.1235
-        self.assertTrue(tb.feq(val1, val2, 0.0001))
-        numpy.testing.assert_array_equal(
-            [False, True, False, False],
-            tb.feq([1., 2., 3., 4.],
-                   [1.25, 2.05, 2.2, 500.1],
-                   0.1)
-            )
-
-    def testfeq_notequal(self):
-        """feq should return false when they are not equal"""
-        val1 = 1.1234
-        val2 = 1.1235
-        self.assertFalse(tb.feq(val1, val2, 0.000005))
 
     def test_medAbsDev(self):
         """medAbsDev should return a known range for given random input"""
@@ -385,12 +379,32 @@ class SimpleFunctionTests(unittest.TestCase):
         numpy.testing.assert_equal(
             [  7,  45, 149, 283, 272, 162,  71,   9,   0,   2], sample)
         #This is a very coarse chunk-check to allow for variations in
-        #RNGs. Values from 100000 iterations
+        #RNGs; by using the same seed it should be deterministic on a
+        #given RNG. Values from 100000 iterations
         numpy.testing.assert_allclose(
-            [3.,  34., 131., 260., 249., 143.,  58.,   4.,   0.,   0.],
+            [3.,  35., 131., 260., 249., 143.,  58.,   4.,   0.,   0.],
             ci_low, atol=2, rtol=1e-2)
         numpy.testing.assert_allclose(
-            [12.,  56., 168., 306., 295., 181.,  84.,  14.,   0.,   5.],
+            [12.,  56., 168., 307., 295., 181.,  85.,  14.,   0.,   5.],
+            ci_high, atol=2, rtol=1e-2)
+
+    def testBootHistoBins(self):
+        """Bootstrap histogram known output for known input, specify bins"""
+        numpy.random.seed(28420)
+        data = numpy.random.randn(1000)
+        bin_edges, ci_low, ci_high, sample = spacepy.toolbox.bootHisto(
+            data, n=1000, seed=28420, bins=numpy.arange(-5., 6.))
+        numpy.testing.assert_array_equal(
+            [-5., -4, -3, -2, -1, 0, 1, 2, 3, 4, 5],
+            bin_edges)
+        numpy.testing.assert_equal(
+            [  0,   2,  18, 143, 358, 328, 131,  18,   1,   1], sample)
+        #Chunk-check as above
+        numpy.testing.assert_allclose(
+            [ 0.,  0., 11.,  125.,  333.,  304.,  114., 11.,  0.,  0.],
+            ci_low, atol=2, rtol=1e-2)
+        numpy.testing.assert_allclose(
+            [ 0.,  5., 25.,  161.,  383.,  353.,  149., 25.,  3.,  3.],
             ci_high, atol=2, rtol=1e-2)
 
     def test_logspace(self):
@@ -460,8 +474,10 @@ class SimpleFunctionTests(unittest.TestCase):
 
     def test_pmm_object(self):
         """Test pmm handling of object arrays"""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', 'pmm: Unable to exclude non-finite',
+                RuntimeWarning, 'spacepy.toolbox$')
             data = [array([5,9,23,24,6]).astype(object),
                     [datetime.datetime(2000, 3, 1, 0, 1), datetime.datetime(2000, 2, 28), datetime.datetime(2000, 3, 1)],
                     numpy.array(['foo', 'bar', 'baz'], dtype=object),
@@ -562,7 +578,7 @@ class SimpleFunctionTests(unittest.TestCase):
             numpy.testing.assert_almost_equal(outputs[i], tb.bin_edges_to_center(val))
 
     def test_hypot(self):
-        """hypot should have known output"""
+        """hypot should have known output, call Python or C (as default)"""
         invals = [ [3, 4], list(range(3, 6)), list(range(3,10)), [-1,2,3] ]
         ans = [ 5, 7.0710678118654755, 16.73320053068151, 3.7416573867739413 ]
         for i, tst in enumerate(invals):
@@ -570,9 +586,33 @@ class SimpleFunctionTests(unittest.TestCase):
         for i, tst in enumerate(invals):
             self.assertAlmostEqual(ans[i], tb.hypot(tst))
         self.assertEqual(5.0, tb.hypot(5.0))
-        if spacepy.lib.have_libspacepy:
-            self.assertEqual(tb.hypot(numpy.array([3.,4.])), 5.0)
-            self.assertEqual(tb.hypot(numpy.array([3,4])), 5.0)
+        # Same as first set of inputs but explicitly np arrays
+        invals = [numpy.asarray([3, 4]), numpy.array([3., 4.]),
+                  numpy.arange(3, 6), numpy.arange(3, 10),
+                  numpy.asarray([-1, 2, 3])]
+        ans = [5, 5.,
+               7.0710678118654755, 16.73320053068151,
+               3.7416573867739413]
+        for i, tst in enumerate(invals):
+            self.assertAlmostEqual(ans[i], tb.hypot(*tst))
+        for i, tst in enumerate(invals):
+            self.assertAlmostEqual(ans[i], tb.hypot(tst))
+        # Few tests of array subclasses
+        invals = [spacepy.dmarray([3, 4]), spacepy.dmarray([3., 4.]),
+                  spacepy.dmarray([-1, 2, 3])]
+        ans = [5, 5.,
+               3.7416573867739413]
+        for i, tst in enumerate(invals):
+            self.assertAlmostEqual(ans[i], tb.hypot(*tst))
+
+    @unittest.skipUnless(spacepy.lib.have_libspacepy, 'libspacepy not found')
+    def test_hypot_python(self):
+        """Explicitly call Python version of hypot if had C before"""
+        try:
+            spacepy.lib.have_libspacepy = False
+            self.test_hypot() # Repeat tests without the C code
+        finally:
+            spacepy.lib.have_libspacepy = True
 
     def testThreadJob(self):
         """Multithread the square of an array"""
@@ -706,7 +746,26 @@ class SimpleFunctionTests(unittest.TestCase):
         res = tb.poisson_fit(data)
         self.assertEqual(ans, numpy.round(res.x))
 
-            
+    def test_assemble_qindenton_daily(self):
+        """Assemble OMNI data structure from Qin-Denton daily files"""
+        dailydir = os.path.join(spacepy_testing.datadir, 'qindenton_daily')
+        omnidata = tb._assemble_qindenton_daily(dailydir)
+        self.assertEqual(
+            ['ByIMF', 'Bz1', 'Bz2', 'Bz3', 'Bz4', 'Bz5', 'Bz6', 'BzIMF',
+             'DOY', 'Dst', 'G1', 'G2', 'G3', 'Kp', 'Pdyn', 'Qbits',
+             'RDT', 'UTC', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'akp3',
+             'dens', 'velo'],
+            sorted(omnidata.keys()))
+        numpy.testing.assert_array_equal(
+            [14,  16,  18,  17,  17,  12,  10,  11,  11,   4,   0,  -8, -13,
+             -13, -12, -11,  -9,  -5,   2,   6,   9,   9,  10,   6,  -2,  -8,
+             -11, -11, -12, -20, -27, -29, -26, -22, -17, -22, -25, -29, -33,
+             -36, -41, -47, -47, -39, -35, -41, -42, -45],
+            omnidata['Dst'])
+        numpy.testing.assert_array_equal(
+            2, omnidata['Qbits']['W6'])
+
+
 class TBTimeFunctionTests(unittest.TestCase):
     def setUp(self):
         super(TBTimeFunctionTests, self).setUp()
@@ -870,7 +929,7 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean_outputTimes(self):
         '''windowMean should return a known set of output times for a given set of input times and windows'''
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(hours=1)
             olap = datetime.timedelta(0)
@@ -897,7 +956,7 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean1(self):
         """windowMean should give known results 1(regression)"""
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(hours=12)
@@ -920,7 +979,7 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean2(self):
         """windowMean should give known results 2(regression)"""
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(hours=12)
@@ -942,7 +1001,7 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean3(self):
         """windowMean should give known results 3(regression)"""
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(hours=12)
@@ -970,7 +1029,7 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean4(self):
         """windowMean should give known results 4(regression)"""
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(hours=12)
@@ -986,8 +1045,9 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean5(self):
         """windowMean should give known results 5(regression)"""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', r'windowmean\:', UserWarning, 'spacepy.toolbox$')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(hours=12)
             data = [10, 20]*50
@@ -1006,11 +1066,10 @@ class TBTimeFunctionTests(unittest.TestCase):
             od_ans, ot_ans = tb.windowMean(data, winsize=1.0, overlap=0)
             numpy.testing.assert_almost_equal(ot_ans, outtime)
             numpy.testing.assert_almost_equal(od_ans, outdata)
-            self.assertEqual(8, len(w))
 
     def test_windowMean_op(self):
         """windowMean should give known results (regression)"""
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(hours=12)
@@ -1032,7 +1091,7 @@ class TBTimeFunctionTests(unittest.TestCase):
 
     def test_windowMean_op2(self):
         """windowMean should give expected sums with len as passed function"""
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings():
             warnings.simplefilter('always')
             wsize = datetime.timedelta(days=1)
             olap = datetime.timedelta(0)
@@ -1048,7 +1107,7 @@ class TBTimeFunctionTests(unittest.TestCase):
                       datetime.datetime(2001, 1, 5, 12, 0)]
             numpy.testing.assert_almost_equal(od_ans, outdata)
             self.assertEqual(ot_ans, outtime)
-            
+
     def test_windowMeanInputs(self):
         """windowMean does some input checking (regression)"""
         wsize = datetime.timedelta(days=1)
