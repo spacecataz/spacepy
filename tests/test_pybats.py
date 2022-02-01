@@ -43,12 +43,11 @@ class TestParseFileTime(unittest.TestCase):
              'y=0_mhd_1_e20130924-220500-054.out',
              'y=0_mhd_2_t00001430_n00031073.out',
              'z=0_mhd_2_t00050000_n00249620.out',
-
              os.path.join(spacepy_testing.datadir,
                           'pybats_test', 'mag_grid_ascii.out'),
              'y=0_mhd_1_t20140410000000_n00001500.out',
              'z=0_mhd_2_e20140410-000000-000_20140410-000300-000.outs',
-             'z=0_mhd_2_n00001500_00001889.outs'
+             'z=0_mhd_2_n00001500_00001889.outs',
              'log_n000010.log',
              'log_e20140410-000000.log'
              ]
@@ -466,8 +465,12 @@ class TestBats2d(unittest.TestCase):
     Test functionality of Bats2d objects.
     '''
 
-    calcnames = ['t', 'j', 'b', 'u', 'b_hat', 'u_perp', 'u_par',
-                 'E', 'beta', 'jb', 'alfven']
+    calcnames = ['t', 'j', 'b', 'u', 'bx_hat', 'by_hat', 'bz_hat',
+                 'u_perp', 'u_par', 'E', 'beta', 'jb', 'alfven']
+    knownCalcSingle = [8.6176513671875, 9.724967e-11, 1.0006003, 400.0,
+                       0.0067278803, 0.009994, 0.99992746, 399.99097, -2.691152,
+                       0.4002311, 8.664787, 9.730319e-17, 9.760558]
+
 
     knownMax1 = {'jx':1.4496836229227483e-05, 'jbz':7.309692051649108e-08,
                  'wy':0.0, 'u':1285.6114501953125}
@@ -483,8 +486,8 @@ class TestBats2d(unittest.TestCase):
         # Test all calculations:
         self.mhd.calc_all()
 
-        for v in self.calcnames:
-            self.assertEqual(knownCalcSingle[v], self.mhd[v][0])
+        for v, x in zip(self.calcnames, self.knownCalcSingle):
+            self.assertAlmostEqual(x, self.mhd[v][0], places=5)
 
     def testSwitchFrame(self):
         '''Test switching frames and associated calculations'''
@@ -774,8 +777,8 @@ class TestImfInput(unittest.TestCase):
         self.assertEqual(self.knownImfBz[-1],  self.sing['bz'][-1])
         self.assertEqual(self.knownImfRho[0],  self.sing['rho'][0])
         self.assertEqual(self.knownImfRho[-1], self.sing['rho'][-1])
-        self.assertEqual(self.knownImfTemp[0], self.sing['temp'][0])
-        self.assertEqual(self.knownImfTemp[-1],self.sing['temp'][-1])
+        self.assertEqual(self.knownImfTemp[0], self.sing['t'][0])
+        self.assertEqual(self.knownImfTemp[-1],self.sing['t'][-1])
 
         # Open and test multi-fluid/non-standard variable names:
         self.assertEqual(self.knownImfBz[0],   self.mult['bz'][0])
