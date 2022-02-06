@@ -2134,7 +2134,7 @@ class Bats2d(IdlFile):
         print('ATTENTION: add_b_magsphere_new is now simply add_b_magsphere')
         warnings.warn('add_b_magsphere_new is a candidate for removal',
                       category=DeprecationWarning)
-        return add_b_magsphere(*args, **kwargs)
+        return self.add_b_magsphere(*args, **kwargs)
 
     def add_b_magsphere_legacy(self, target=None, loc=111, style='mag',
                                DoImf=False, DoOpen=False, DoTail=False,
@@ -2422,7 +2422,7 @@ class Bats2d(IdlFile):
 
         import numbers
         import matplotlib.pyplot as plt
-        from matplotlib.colors import LogNorm
+        from matplotlib.colors import LogNorm, Normalize
 
         # Set ax and fig based on given target.
         fig, ax = set_target(target, figsize=(10,10), loc=loc)
