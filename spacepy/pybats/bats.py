@@ -1630,7 +1630,7 @@ class Bats2d(IdlFile):
         evenly but randomly throughout the plot domain.
 
         Lines will be seeded randomly over a given spatial range given by
-        *xlim* and *ylim* **OR** the range of the axes (if *target* is set to
+        `xlim` and `ylim` **OR** the range of the axes (if `target` is set to
         a non-empty axes object) **OR** over the entire object domain (in that
         order).
 
@@ -1638,14 +1638,14 @@ class Bats2d(IdlFile):
         :class:`matplotlib.collections.LineCollection`.
 
         Parameters
-        ==========
+        ----------
         xcomp : string
              The first component of the vector field to trace (e.g., 'bx').
         ycomp : string
              The second component of the vector field to trace (e.g., 'bz').
 
         Other Parameters
-        ================
+        ----------------
         target : Matplotlib Figure or Axes object
             Set plot destination.  Defaults to new figure.
         loc : 3-digit integer
@@ -1665,7 +1665,7 @@ class Bats2d(IdlFile):
         narrow : int
             Add "n" arrows to each line to indicate direction.  Default is
             zero, or no lines.  If narrow=1, arrows will be placed at
-            *start_points*.
+            `start_points`.
         arrstyle : string
             Set the arrow style in the same manner as Matplotlib's
             annotate function.  Default is '->'.
@@ -1673,7 +1673,7 @@ class Bats2d(IdlFile):
             Set the size, in points, of each directional arrow.  Default is 12.
 
         Returns:
-        ========
+        --------
         fig : matplotlib Figure object
         ax  : matplotlib Axes object
         collect : matplotlib Collection object of trace results
