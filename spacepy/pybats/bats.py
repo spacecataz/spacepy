@@ -2112,17 +2112,19 @@ class Bats2d(IdlFile):
                                      maxPoints=maxPoints, style=style)
                 # Append to lines, colors.
                 # Northern lobe lines:
-                lines.append(np.array([sD.x, sD.y]).transpose())
-                if colors['nlobe']:
-                    cols.append(colors['nlobe'])
-                else:
-                    cols.append(sD.color)
+                if sD.status != 'closed':
+                    lines.append(np.array([sD.x, sD.y]).transpose())
+                    if colors['nlobe']:
+                        cols.append(colors['nlobe'])
+                    else:
+                        cols.append(sD.color)
                 # Southern lobe lines:
-                lines.append(np.array([sN.x, sN.y]).transpose())
-                if colors['slobe']:
-                    cols.append(colors['slobe'])
-                else:
-                    cols.append(sN.color)
+                if sN.status != 'closed':
+                    lines.append(np.array([sN.x, sN.y]).transpose())
+                    if colors['slobe']:
+                        cols.append(colors['slobe'])
+                    else:
+                        cols.append(sN.color)
 
         # Add last-closed field lines at end so they are plotted "on top".
         if DoLast:
