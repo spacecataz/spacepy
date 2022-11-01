@@ -1810,10 +1810,14 @@ class Bats2d(IdlFile):
 
         '''
 
+        # Set radius to start tracing. Should be rbody + 2 grid cell spacings.
+        dx = self.qtree[self.find_block(0, 0)].dx
+        rstart = self.attrs['rbody'] + 2.*dx
+
         # Get the dipole tilt by tracing a field line near the inner
         # boundary.  Find the max radial distance; tilt angle == angle off
         # equator of point of min R (~=max |B|).
-        x_small = self.attrs['rbody']*-1.2  # check nightside.
+        x_small = -rstart  # check nightside.
         stream = self.get_stream(x_small, 0, 'bx', 'bz', method=method)
         r = stream.x**2 + stream.y**2
         loc = r == r.max()
@@ -1824,9 +1828,8 @@ class Bats2d(IdlFile):
                 tilt*180./np.pi))
 
         # Dayside- start by tracing from plane of min |B| and perp. to that:
-        R = self.attrs['rbody']*1.15
-        s1 = self.get_stream(R*np.cos(tilt), R*np.sin(tilt), 'bx', 'bz',
-                             method=method)
+        s1 = self.get_stream(rstart*np.cos(tilt), rstart*np.sin(tilt),
+                             'bx', 'bz', method=method)
 
         # Get initial angle and step.
         theta = tilt
@@ -1844,8 +1847,8 @@ class Bats2d(IdlFile):
             theta += (closed and isDay) * dTheta  # adjust nightwards.
             theta -= (s1.open or isNig) * dTheta  # adjust daywards.
             # Trace at the new theta to further restrict angular range:
-            s1 = self.get_stream(R*np.cos(theta), R*np.sin(theta), 'bx', 'bz',
-                                 method=method)
+            s1 = self.get_stream(rstart*np.cos(theta), rstart*np.sin(theta),
+                                 'bx', 'bz', method=method)
             # Reduce angular step:
             dTheta /= 2.
             if nIter > max_iter:
@@ -1858,8 +1861,8 @@ class Bats2d(IdlFile):
         isNig = s1.x.mean() < 0
         while (s1.open or isNig):
             theta -= tol / 2  # inch daywards.
-            s1 = self.get_stream(R*np.cos(theta), R*np.sin(theta), 'bx', 'bz',
-                                 method=method)
+            s1 = self.get_stream(rstart*np.cos(theta), rstart*np.sin(theta),
+                                 'bx', 'bz', method=method)
             isNig = s1.x.mean() < 0
 
         # Use last line to get southern hemisphere theta:
@@ -1883,8 +1886,8 @@ class Bats2d(IdlFile):
         while (dTheta > tol) or (s1.open):
             nIter += 1
 
-            s1 = self.get_stream(R*np.cos(theta), R*np.sin(theta), 'bx', 'bz',
-                                 method=method, maxPoints=1E6)
+            s1 = self.get_stream(rstart*np.cos(theta), rstart*np.sin(theta),
+                                 'bx', 'bz', method=method, maxPoints=1E6)
             # Closed?  Nightside?
             closed = not(s1.open)
             isNig = s1.x.mean() < 0
@@ -1896,7 +1899,7 @@ class Bats2d(IdlFile):
             # Don't cross over into dayside territory.
             if theta < theta_day[0]:
                 theta = theta_day[0]+tol
-                s1 = self.get_stream(R*np.cos(theta), R*np.sin(theta),
+                s1 = self.get_stream(rstart*np.cos(theta), rstart*np.sin(theta),
                                      'bx', 'bz', method=method, maxPoints=1E6)
                 if debug:
                     print('No open flux over polar cap.')
