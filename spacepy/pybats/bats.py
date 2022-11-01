@@ -1945,7 +1945,10 @@ class Bats2d(IdlFile):
         white.  Alternatively, this kwarg works in a similar manner as
         it does in :function:`~matplotlib.pyplot.plot`,
         i.e., a string code such as "b-" (a solid blue line) or 'r:' (a
-        dotted red line), etc.  Both *colors* and *linestyles* work much
+        dotted red line), etc.
+
+        Both *colors* and *linestyles*
+        Both *colors* and *linestyles* work much
         as they do for :class:`~matplotlib.collections.LineCollection`, but
         only a single value (not a list or tuple) should be provided.
         *colors* can be a CSS4 color name, an RGB tuple, or a string hex code.
@@ -2036,6 +2039,22 @@ class Bats2d(IdlFile):
         fig, ax = set_target(target, figsize=(10, 10), loc=111)
         self.add_body(ax)
 
+        # Change default color behavior based on colors kwarg.
+        if type(colors) is str:
+            # Single color given? Apply to all field lines.
+            savecol = colors
+            colors = {'nlobe': savecol, 'slobe': savecol,
+                      'closed': savecol, 'last': savecol}
+        elif type(colors) is dict:
+            # Color dict given? Ensure
+            for linetype in ['nlobe', 'slobe', 'closed', 'last']:
+                if linetype not in colors:
+                    colors[linetype] = None
+        else:
+            # Default behavior: 'None' leaves color handling to Stream objects
+            colors = {'nlobe': None, 'slobe': None,
+                      'closed': None, 'last': None}
+
         # Lines, colors, and styles:
         lines = []
         cols = []
@@ -2062,7 +2081,7 @@ class Bats2d(IdlFile):
         # Do closed field lines #
         if DoClosed:
             for tDay, tNit in zip(
-                    np.linspace(0,     thetaD[0]-dTheta, nClosed),
+                    np.linspace(0, thetaD[0]-dTheta, nClosed),
                     np.linspace(np.pi, thetaN[1]-dTheta, nClosed)):
                 x, y = R*np.cos(tDay), R*np.sin(tDay)
                 sD = self.get_stream(x, y, compX, compY, method=method,
@@ -2073,8 +2092,12 @@ class Bats2d(IdlFile):
                 # Append to lines, colors.
                 lines.append(np.array([sD.x, sD.y]).transpose())
                 lines.append(np.array([sN.x, sN.y]).transpose())
-                cols.append(sD.color)
-                cols.append(sN.color)
+                if colors['closed']:
+                    cols.append(colors['closed'])
+                    cols.append(colors['closed'])
+                else:
+                    cols.append(sD.color)
+                    cols.append(sN.color)
 
         # Do open field lines
         if DoOpen:
@@ -2088,22 +2111,25 @@ class Bats2d(IdlFile):
                 sN = self.get_stream(x, y, compX, compY, method=method,
                                      maxPoints=maxPoints, style=style)
                 # Append to lines, colors.
+                # Northern lobe lines:
                 lines.append(np.array([sD.x, sD.y]).transpose())
+                if colors['nlobe']:
+                    cols.append(colors['nlobe'])
+                else:
+                    cols.append(sD.color)
+                # Southern lobe lines:
                 lines.append(np.array([sN.x, sN.y]).transpose())
-                cols.append(sD.color)
-                cols.append(sN.color)
-
-        # Finalize Collection
-        # If colors is given, replace what is given from
-        # individual lines.  Keep the list-approach, however.
-        if colors:
-            cols = [colors]*len(cols)
+                if colors['slobe']:
+                    cols.append(colors['slobe'])
+                else:
+                    cols.append(sN.color)
 
         # Add last-closed field lines at end so they are plotted "on top".
         if DoLast:
             lines += [np.array([last1.x, last1.y]).transpose(),
                       np.array([last2.x, last2.y]).transpose()]
-            cols += 2 * ['r']
+            lastcolor = colors['last'] if colors['last'] else 'r'
+            cols += 2 * [lastcolor]
 
         # Create line collection & plot.
         collect = LineCollection(lines, colors=cols, linestyles=linestyles,
