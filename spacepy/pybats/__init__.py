@@ -14,14 +14,14 @@ Copyright ©2010 Los Alamos National Security, LLC.
 __contact__ = 'Dan Welling, daniel.welling@uta.edu'
 
 # Global imports (used ubiquitously throughout this module.
-import os.path
-from functools import wraps
-
-from spacepy.datamodel import dmarray, SpaceData
 import datetime as dt
-import numpy as np
+from functools import wraps
+import os.path
 import warnings
 
+import numpy as np
+
+from spacepy.datamodel import dmarray, SpaceData
 
 # Pybats-related decorators:
 def calc_wrapper(meth):
