@@ -7,11 +7,10 @@ Ridley Serial.
 Copyright 2010 Los Alamos National Security, LLC.
 '''
 
-import os
 import numpy as np
-from spacepy import deprecated
 from spacepy.plot import set_target
 from spacepy.pybats import PbData, dmarray
+
 
 def get_iono_cb(ct_name='bwr'):
     '''
@@ -37,22 +36,25 @@ def get_iono_cb(ct_name='bwr'):
 
     from matplotlib.colors import LinearSegmentedColormap as lsc
 
-    if ct_name=='bwr':
+    if ct_name == 'bwr':
         table = {
-            'red':  [(0.,0.,.0),(.34,0.,0.),(.5,1.,1.),(1.,1.,1.)],
-            'green':[(0.,0.,0.),(.35,1.,1.),(.66,1.,1.),(1.,0.,0.)],
-            'blue' :[(0.,1.,1.),(.5,1.,1.),(.66,0.,0.),(.85,0.,0.),(1.,.1,.1)]
+            'red':   [(0., 0., 0.), (.34, 0., 0.), (.5, 1., 1.), (1., 1., 1.)],
+            'green': [(0., 0., 0.), (.35, 1., 1.),
+                      (.66, 1., 1.), (1., 0., 0.)],
+            'blue':  [(0., 1., 1.), (.5, 1., 1.), (.66, 0., 0.),
+                      (.85, 0., 0.), (1., .1, .1)]
             }
-        cmap = lsc('blue_white_red',table)
-    elif ct_name=='wr':
+        cmap = lsc('blue_white_red', table)
+    elif ct_name == 'wr':
         table = {
-            'red':  [(0.,1.,1.),(1.,1.,1.)],
-            'green':[(0.,1.,1.),(1.,0.,0.)],
-            'blue' :[(0.,1.,1.),(1.,.0,.0)]
+            'red':   [(0., 1., 1.), (1., 1., 1.)],
+            'green': [(0., 1., 1.), (1., 0., 0.)],
+            'blue':  [(0., 1., 1.), (1., .0, .0)]
             }
-        cmap = lsc('white_red',table)
+        cmap = lsc('white_red', table)
 
     return cmap
+
 
 def tex_label(varname):
     '''
@@ -76,19 +78,18 @@ def tex_label(varname):
 
     '''
 
-    if varname[:2]=='n_' or varname[:2]=='s_':
-        varname=varname[2:]
+    if varname[:2] == 'n_' or varname[:2] == 's_':
+        varname = varname[2:]
 
     known = {
         'phi': r'$\Phi_{Ionosphere}$',
-        'sigmah':r'$\sigma_{Hall}$',
-        'sigmap':r'$\sigma_{Peder}$',
-        'jr':r'$J_{radial}$',
-        'mA/m^2':r'$\mu A/m^{2}$',
-        'W/m2':r'$W/m^2$',
-        'eV':'$eV$'
+        'sigmah': r'$\sigma_{Hall}$',
+        'sigmap': r'$\sigma_{Peder}$',
+        'jr': r'$J_{radial}$',
+        'mA/m^2': r'$\mu A/m^{2}$',
+        'W/m2': r'$W/m^2$',
+        'eV': '$eV$'
         }
-
 
     if varname in known:
         label = known[varname]
@@ -96,6 +97,7 @@ def tex_label(varname):
         label = varname
 
     return label
+
 
 class Iono(PbData):
     '''
@@ -109,7 +111,7 @@ class Iono(PbData):
 
     def __init__(self, infile, *args, **kwargs):
         super(Iono, self).__init__(*args, **kwargs)
-        self.attrs['file']=infile
+        self.attrs['file'] = infile
         self.readascii()
 
     def readascii(self):
@@ -117,17 +119,16 @@ class Iono(PbData):
         Read an ascii ".idl" output file and load the contents into the object.
         '''
 
-        from sys import version_info
         import re
         import datetime as dt
         from numpy import zeros, reshape
         import gzip
 
         # slurp entire file.
-        if self.attrs['file'][-3:]=='.gz':
+        if self.attrs['file'][-3:] == '.gz':
             try:
-                infile = gzip.open(self.attrs['file'],'rt')
-            except ValueError: #Python2.7 (Windows) compatibility
+                infile = gzip.open(self.attrs['file'], 'rt')
+            except ValueError:  # Python2.7 (Windows) compatibility
                 infile = gzip.open(self.attrs['file'])
         else:
             infile = open(self.attrs['file'], 'r')
@@ -140,25 +141,25 @@ class Iono(PbData):
 
         i = raw.index('NUMERICAL VALUES\n')
         self.attrs['nvars'] = int(raw[i+1].split()[0])
-        self.attrs['ntheta']= int(raw[i+2].split()[0])
-        self.attrs['nphi']  = int(raw[i+3].split()[0])
+        self.attrs['ntheta'] = int(raw[i+2].split()[0])
+        self.attrs['nphi'] = int(raw[i+3].split()[0])
 
         # Convenience:
         nphi, ntheta = self.attrs['nphi'], self.attrs['ntheta']
 
         i = raw.index('TIME\n')
         self.attrs['time'] = dt.datetime(
-            int(raw[i+1].split()[0]),      #year
-            int(raw[i+2].split()[0]),      #month
-            int(raw[i+3].split()[0]),      #day
-            int(raw[i+4].split()[0]),      #hour
-            int(raw[i+5].split()[0]),      #min
-            int(raw[i+6].split()[0]),      #sec
-            int(raw[i+7].split()[0])*1000  #microsec
+            int(raw[i+1].split()[0]),      # year
+            int(raw[i+2].split()[0]),      # month
+            int(raw[i+3].split()[0]),      # day
+            int(raw[i+4].split()[0]),      # hour
+            int(raw[i+5].split()[0]),      # min
+            int(raw[i+6].split()[0]),      # sec
+            int(raw[i+7].split()[0])*1000  # microsec
             )
 
         i = raw.index('SIMULATION\n')
-        self.attrs['iter']    =   int(raw[i+1].split()[0])
+        self.attrs['iter'] = int(raw[i+1].split()[0])
         self.attrs['simtime'] = float(raw[i+2].split()[0])
 
         i = raw.index('DIPOLE TILT\n')
@@ -168,9 +169,9 @@ class Iono(PbData):
 
         i = raw.index('VARIABLE LIST\n')
         namevar = []
-        units   = {}
-        for j in range(i+1,i+self.attrs['nvars']+1):
-            match = re.match(r'\s*\d+\s+([\w\s\W]+)\[([\w\s\W]+)\]',raw[j])
+        units = {}
+        for j in range(i+1, i+self.attrs['nvars']+1):
+            match = re.match(r'\s*\d+\s+([\w\s\W]+)\[([\w\s\W]+)\]', raw[j])
             if match:
                 name = (match.group(1).strip()).lower()
                 namevar.append(name)
@@ -178,21 +179,19 @@ class Iono(PbData):
             else:
                 raise ValueError('Could not parse %s' % raw[j])
 
-
-        ### Read all data ###
-
+        # ## Read all data ###
         # Create data arrays
         nPts = self.attrs['ntheta']*self.attrs['nphi']
         for key in namevar:
-            self['n_'+key] = dmarray(zeros(nPts), {'units':units[key]})
-            self['s_'+key] = dmarray(zeros(nPts), {'units':units[key]})
+            self['n_'+key] = dmarray(zeros(nPts), {'units': units[key]})
+            self['s_'+key] = dmarray(zeros(nPts), {'units': units[key]})
         i = raw.index('BEGIN NORTHERN HEMISPHERE\n')+1
 
         # Some compilers insert line breaks automatically when fortran format
         # string is not adequately specified.  Let's see if that's the
         # case here: how many lines does it take to cover all variables?
         nvars, nvarline, nwrap = len(namevar), 0, 0
-        while nvarline<nvars:
+        while nvarline < nvars:
             nvarline += len(raw[i+nwrap].split())
             nwrap += 1
 
@@ -221,8 +220,8 @@ class Iono(PbData):
             self[skey] = reshape(self[skey], (ntheta, nphi), order='F')
 
         # Some extra grid info:
-        self.dlon = self['n_psi'  ][0,3]-self['n_psi'  ][0,2]
-        self.dlat = self['n_theta'][3,0]-self['n_theta'][2,0]
+        self.dlon = self['n_psi'][0, 3]-self['n_psi'][0, 2]
+        self.dlat = self['n_theta'][3, 0]-self['n_theta'][2, 0]
 
     def calc_j(self):
         '''
@@ -231,12 +230,12 @@ class Iono(PbData):
         are done for both the northern and southern hemisphere with the
         appropriate prefixes (``n_`` and ``s_``) applied to each key.
 
-        
+
         ====== ====================================================
-        key    Description                                       
-        ====== ==================================================== 
-        j      Total horizontal current, $sqrt(jx^2+jy^2+jz^2)$  
-        jphi   Azimuthal current, positive values are eastward. 
+        key    Description
+        ====== ====================================================
+        j      Total horizontal current, $sqrt(jx^2+jy^2+jz^2)$
+        jphi   Azimuthal current, positive values are eastward.
         ====== ====================================================
 
         Returns
@@ -245,7 +244,8 @@ class Iono(PbData):
 
         Examples
         ========
-        >>> a = rim.Iono('spacepy/tests/data/pybats_test/it000321_104510_000.idl.gz')
+        >>> f = 'spacepy/tests/data/pybats_test/it000321_104510_000.idl.gz'
+        >>> a = rim.Iono(f)
         >>> a.calc_j()
         >>> print(a['n_jphi'])
 
@@ -254,12 +254,12 @@ class Iono(PbData):
         # Loop over hemispheres:
         for h in ('n_', 's_'):
             # Calculate total horizontal current
-            self[h+'j'] = np.sqrt(  self[h+'jx']**2
+            self[h+'j'] = np.sqrt(self[h+'jx']**2
                                   + self[h+'jy']**2
-                                  + self[h+'jz']**2 )
+                                  + self[h+'jz']**2)
 
             # Calculate total azimuthal current (i.e., electrojets):
-            self[h+'jphi'] = self[h+'jy'] * np.cos(np.pi/180. * self[h+'psi']) \
+            self[h+'jphi'] = self[h+'jy'] * np.cos(np.pi/180. * self[h+'psi'])\
                 - self[h+'jx'] * np.sin(np.pi/180. * self[h+'psi'])
 
         return True
@@ -283,7 +283,8 @@ class Iono(PbData):
 
         Examples
         ========
-        >>> a = rim.Iono('spacepy/tests/data/pybats_test/it000321_104510_000.idl.gz')
+        >>> f = 'spacepy/tests/data/pybats_test/it000321_104510_000.idl.gz'
+        >>> a = rim.Iono(f)
         >>> a.calc_I()
         >>> print(a['n_Iup'])
 
@@ -291,30 +292,30 @@ class Iono(PbData):
 
         # Calculate some physically meaningful values/units
         units = 1E-6*1E-6  # micro amps to amps, amps to MegaAmps
-        R = (6371.0+110.0)*1000.0 # Radius of Earth + iono altitude
+        R = (6371.0+110.0) * 1000.0  # Radius of Earth + iono altitude
         dTheta = np.pi*self.dlat/180.
-        dPhi   = np.pi*self.dlon/180.
+        dPhi = np.pi*self.dlon/180.
 
         # -----NORTHERN HEMISPHERE-----
         # Get relevant values:
-        colat     = self['n_theta']*np.pi/180.
+        colat = self['n_theta']*np.pi/180.
         integrand = self['n_jr']*np.sin(colat)*dTheta*dPhi
         # Get locations of "up" and "down"
-        loc_up = self['n_jr']>0
-        loc_do = self['n_jr']<0
-        self['n_I']     = units*R**2 * np.sum(integrand)
-        self['n_Iup']   = units*R**2 * np.sum(integrand[loc_up])
+        loc_up = self['n_jr'] > 0
+        loc_do = self['n_jr'] < 0
+        self['n_I'] = units*R**2 * np.sum(integrand)
+        self['n_Iup'] = units*R**2 * np.sum(integrand[loc_up])
         self['n_Idown'] = units*R**2 * np.sum(integrand[loc_do])
 
         # -----SOUTHERN HEMISPHERE-----
         # Get relevant values:
-        colat     = self['s_theta']*np.pi/180.
+        colat = self['s_theta']*np.pi/180.
         integrand = self['s_jr']*np.sin(colat)*dTheta*dPhi
         # Get locations of "up" and "down"
-        loc_up = self['s_jr']>0
-        loc_do = self['s_jr']<0
-        self['s_I']     = units*R**2 * np.sum(integrand)
-        self['s_Iup']   = units*R**2 * np.sum(integrand[loc_up])
+        loc_up = self['s_jr'] > 0
+        loc_do = self['s_jr'] < 0
+        self['s_I'] = units*R**2 * np.sum(integrand)
+        self['s_Iup'] = units*R**2 * np.sum(integrand[loc_up])
         self['s_Idown'] = units*R**2 * np.sum(integrand[loc_do])
 
     def add_cont(self, var, target=None, n=50, maxz=False, lines=False,
@@ -365,7 +366,8 @@ class Iono(PbData):
             that is strictly positive and "Seismic" for diverging data.
             Alternatively, legacy Ridley Ionosphere Model color maps can be
             loaded using "l_wr" (white red) or "l_bwr" (blue-white-red),
-            where the "l\\_" prefix indicates legacy and not Matplotlib color maps.
+            where the "l\\_" prefix indicates legacy and not Matplotlib color
+            maps.
         add_cbar : bool
             Add colorbar to plot.  Default is **False** which will
             not add one to the plot.
@@ -384,7 +386,7 @@ class Iono(PbData):
         from numpy import linspace
         from matplotlib.colors import Normalize
         from matplotlib.ticker import MaxNLocator, MultipleLocator
-        from matplotlib.pyplot import clabel, colorbar
+        from matplotlib.pyplot import colorbar
 
         fig, ax = set_target(target, polar=True, loc=loc)
 
@@ -392,18 +394,19 @@ class Iono(PbData):
 
         # user defined variables may not have hemisphere marking.
         # Assume nothern hemi in those cases.
-        if hemi!='n_' and hemi!='s_': hemi = 'n_'
+        if hemi != 'n_' and hemi != 's_':
+            hemi = 'n_'
 
         # Set levels and ticks:
-        if label==None:
-            label=tex_label(var)
-        lt_labels = ['06',    label, '18',   '00']
-        xticks    = [   0,   pi/2,   pi, 3*pi/2]
+        if label is None:
+            label = tex_label(var)
+        lt_labels = ['06', label, '18', '00']
+        xticks = [0, pi/2, pi, 3*pi/2]
         lct = MultipleLocator(10)
         minz = self[var].min()
         if minz < 0.0:
             if not maxz:
-                maxz = max([abs(minz),self[var].max()])
+                maxz = max([abs(minz), self[var].max()])
             crange = Normalize(vmin=-1.*maxz, vmax=maxz)
             levs = linspace(-1.*maxz, maxz, n)
         else:
@@ -415,16 +418,17 @@ class Iono(PbData):
         # Get color map if not given:
         if not cmap:
             if self[var].min() >= 0.0:
-                cmap='Reds'
+                cmap = 'Reds'
             else:
-                cmap='seismic'
+                cmap = 'seismic'
         # Search for legacy maps:
         elif 'l_' in cmap:
-            cmap=get_iono_cb(cmap[2:])
+            cmap = get_iono_cb(cmap[2:])
 
         # Set the latitude based on hemisphere:
         theta = self[hemi+'theta']
-        if 's_' in hemi: theta = 180-self[hemi+'theta']
+        if 's_' in hemi:
+            theta = 180-self[hemi+'theta']
 
         # Create contour:
         cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
@@ -432,35 +436,39 @@ class Iono(PbData):
                            **kwargs)
         # Set xtick label size, increase font of top label.
         labels = ax.get_xticklabels()
-        for l in labels: l.set_size(xticksize)
+        for lab in labels:
+            lab.set_size(xticksize)
         labels[1].set_size(xticksize*1.25)
 
         if lines:
             nk = int(round(n/3.0))
-            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
-                              np.array(self[var]), nk, colors='k')
-            #clabel(cnt2,fmt='%3i',fontsize=10)
+            ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                       np.array(self[var]), nk, colors='k')
+            # clabel(cnt2,fmt='%3i',fontsize=10)
 
         if add_cbar:
             cbarticks = MaxNLocator(7)
-            cbar = colorbar(cnt1, ticks=cbarticks, shrink=0.75, pad=0.08, ax=ax)
+            cbar = colorbar(cnt1, ticks=cbarticks, shrink=0.75,
+                            pad=0.08, ax=ax)
             cbar.set_label(tex_label(self[var].attrs['units']))
         else:
-            cbar=False
+            cbar = False
         ax.set_xticks(xticks)
         ax.set_xticklabels(lt_labels)
         ax.yaxis.set_major_locator(lct)
-        ax.set_ylim([0,max_colat])
+        ax.set_ylim([0, max_colat])
 
         # Use text function to manually add pretty ticks.
-        ax.set_yticklabels('') # old ticks off.
-        opts = {'size':yticksize, 'rotation':-45, 'ha':'center', 'va':'center'}
-        for theta in [80.,70.,60.]:
+        ax.set_yticklabels('')  # old ticks off.
+        opts = {'size': yticksize, 'rotation': -45,
+                'ha': 'center', 'va': 'center'}
+        for theta in [80., 70., 60.]:
             txt = '{:02.0f}'.format(theta)+r'$^{\circ}$'
             ax.text(pi/4., 90.-theta, txt, color='w', weight='heavy', **opts)
             ax.text(pi/4., 90.-theta, txt, color='k', weight='light', **opts)
 
         return fig, ax, cnt1, cbar
+
 
 class OvalDebugFile(PbData):
     '''
@@ -471,7 +479,7 @@ class OvalDebugFile(PbData):
 
     def __init__(self, infile, *args, **kwargs):
         super(OvalDebugFile, self).__init__(*args, **kwargs)
-        self.attrs['file']=infile
+        self.attrs['file'] = infile
         self._readascii()
 
     def _readascii(self):
@@ -487,9 +495,10 @@ class OvalDebugFile(PbData):
         f.close()
 
         # Parse header to get longitude in radians:
-        l = lines.pop(0)
-        self['lon'] = np.array(l.split('=')[-1].split(), dtype=float)* np.pi/180.
-        l = lines.pop(0)
+        line = lines.pop(0)
+        self['lon'] = np.array(line.split('=')[-1].split(), dtype=float) \
+            * np.pi/180.
+        line = lines.pop(0)
 
         # Some helper vars:
         nLons = self['lon'].size
@@ -497,13 +506,12 @@ class OvalDebugFile(PbData):
 
         # Create container arrays:
         self['time'] = np.zeros(nLine, dtype=object)
-        self['oval'] = np.zeros( (nLine, nLons) )
+        self['oval'] = np.zeros((nLine, nLons))
 
         # Parse rest of file:
-        for j,l in enumerate(lines):
-            self['time'][j]   = dt.datetime.strptime(l[:19], '%Y %m %d %H %M %S')
-            self['oval'][j,:] = l.split()[7:]
-
+        for j, l in enumerate(lines):
+            self['time'][j] = dt.datetime.strptime(l[:19], '%Y %m %d %H %M %S')
+            self['oval'][j, :] = l.split()[7:]
 
     def get_oval(self, time, interp=True):
         '''
@@ -540,49 +548,50 @@ class OvalDebugFile(PbData):
 
         # If *time* is outside the bounds of self['time'], raise exception
         # to avoid extrapolation.
-        if time<self['time'][0] or time>self['time'][-1]:
+        if time < self['time'][0] or time > self['time'][-1]:
             raise ValueError('Given time outside object range ' +
                              'and requires extrapolation')
 
         # Turn datetimes into numbers.
-        time     = date2num(time)
+        time = date2num(time)
         ovaltime = date2num(self['time'])
 
         # Start by obtaining the indices of the time array that bound
         index = np.arange(self['time'].size)
-        i1 = index[time>=ovaltime][-1] # Value before time
-        i2 = index[time<=ovaltime][ 0] # Value after time
+        i1 = index[time >= ovaltime][-1]  # Value before time
+        i2 = index[time <= ovaltime][0]  # Value after time
 
         # Check for exact matches:
         dT1 = np.abs(ovaltime[i1]-time)
         dT2 = np.abs(ovaltime[i2]-time)
-        if dT1==0: return self['oval'][i1]
-        if dT2==0: return self['oval'][i2]
+        if dT1 == 0:
+            return self['oval'][i1]
+        if dT2 == 0:
+            return self['oval'][i2]
 
         # If no interpolation, just send back nearest neighbor:
         if not interp:
-            if dT1<dT2:
+            if dT1 < dT2:
                 return self['oval'][i1]
             else:
                 return self['oval'][i2]
 
         # If interpolation, get slope and y-intercept vectors:
         dT = ovaltime[i2]-ovaltime[i1]
-        m  = (self['oval'][i2]-self['oval'][i1])/dT
-        b  = self['oval'][i2] - m*ovaltime[i2]
+        m = (self['oval'][i2]-self['oval'][i1])/dT
+        b = self['oval'][i2] - m*ovaltime[i2]
 
         # Interpolate and return:
         return m*time + b
 
-
     def add_oval_line(self, time, *args, **kwargs):
         '''
-        Adds the location of the auroral oval at time *time* as a line plot on to
-        *target*, which must be a Matplotlib figure/axes.
+        Adds the location of the auroral oval at time *time* as a line plot on
+        to *target*, which must be a Matplotlib figure/axes.
 
         If *target* not given, a new axes object is created.  If *target* is
-        not an existing axes object, a new axes object is created and customized
-        to be an ionosphere polar plot.
+        not an existing axes object, a new axes object is created and
+        customized to be an ionosphere polar plot.
 
         Extra arguments/kwargs are sent to :func:`~matplotlib.pyplot.plot`.
 
@@ -626,18 +635,23 @@ class OvalDebugFile(PbData):
         import datetime as dt
 
         # Handle kwargs not being handed to plot:
-        target=None; loc=111; interp=True
-        if 'target' in kwargs: target=kwargs.pop('target')
-        if 'interp' in kwargs: interp=kwargs.pop('interp')
-        if 'loc'    in kwargs: loc=kwargs.pop('loc')
+        target = None
+        loc = 111
+        interp = True
+        if 'target' in kwargs:
+            target = kwargs.pop('target')
+        if 'interp' in kwargs:
+            interp = kwargs.pop('interp')
+        if 'loc' in kwargs:
+            loc = kwargs.pop('loc')
 
         # Set plot targets:
         fig, ax = set_target(target, polar=True, loc=loc)
 
         # Get oval interpolated in time:
-        if type(time) == dt.datetime:
+        if type(time) is dt.datetime:
             oval = self.get_oval(time, interp=interp)
-        elif type(time) == int:
+        elif type(time) is int:
             oval = self['oval'][time]
         else:
             raise TypeError('Unrecognized type for *time*:'+type(time))
@@ -646,4 +660,3 @@ class OvalDebugFile(PbData):
         line = ax.plot(self['lon']+np.pi/2., oval, *args, **kwargs)
 
         return fig, ax, line
-
