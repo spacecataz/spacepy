@@ -318,8 +318,8 @@ class Iono(PbData):
         self['s_Iup'] = units*R**2 * np.sum(integrand[loc_up])
         self['s_Idown'] = units*R**2 * np.sum(integrand[loc_do])
 
-    def add_cont(self, var, target=None, n=50, maxz=False, lines=False,
-                 cmap=False, add_cbar=False, label=None, loc=111,
+    def add_cont(self, var, target=None, n=50, maxz=False, dolines=False,
+                 dofill=True, cmap=False, add_cbar=False, label=None, loc=111,
                  xticksize=12, yticksize=12, max_colat=40, **kwargs):
         '''
         Create a polar contour of variable *var*.  Plot will be either drawn
@@ -352,9 +352,10 @@ class Iono(PbData):
             Default 111 (single plot).
         n : int
             Set number of levels.  Default is 50.  If unfilled lines are
-            added (see *lines* kwarg), multiples of three provide coherence
+            added (see *dolines* kwarg), multiples of three provide coherence
             between filled and unfilled contours.
-        lines : bool
+        dofill : bool, defaults to true
+        dolines : bool, defaults to True
             Add unfilled black solid/dashed contours to plot for additional
             contrast.  Default is **True**.
         maxz : real
@@ -390,6 +391,10 @@ class Iono(PbData):
 
         fig, ax = set_target(target, polar=True, loc=loc)
 
+        # If dofill is off, turn on lines.
+        if not dofill:
+            dolines = True
+
         hemi = var[:2]
 
         # user defined variables may not have hemisphere marking.
@@ -397,7 +402,7 @@ class Iono(PbData):
         if hemi != 'n_' and hemi != 's_':
             hemi = 'n_'
 
-        # Set levels and ticks:
+        # Set ticks for polar axes.
         if label is None:
             label = tex_label(var)
         lt_labels = ['06', label, '18', '00']
@@ -431,24 +436,29 @@ class Iono(PbData):
             theta = 180-self[hemi+'theta']
 
         # Create contour:
-        cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
-                           np.array(self[var]), levs, norm=crange, cmap=cmap,
-                           **kwargs)
+        if dofill:
+            cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                               np.array(self[var]), levs, norm=crange,
+                               cmap=cmap, **kwargs)
+        else:
+            cnt1 = None
+
         # Set xtick label size, increase font of top label.
         labels = ax.get_xticklabels()
         for lab in labels:
             lab.set_size(xticksize)
         labels[1].set_size(xticksize*1.25)
 
-        if lines:
+        if dolines:
             nk = int(round(n/3.0))
-            ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
-                       np.array(self[var]), nk, colors='k')
+            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                              np.array(self[var]), nk, colors='k')
             # clabel(cnt2,fmt='%3i',fontsize=10)
 
         if add_cbar:
             cbarticks = MaxNLocator(7)
-            cbar = colorbar(cnt1, ticks=cbarticks, shrink=0.75,
+            contour = cnt1 if dofill else cnt2
+            cbar = colorbar(contour, ticks=cbarticks, shrink=0.75,
                             pad=0.08, ax=ax)
             cbar.set_label(tex_label(self[var].attrs['units']))
         else:
