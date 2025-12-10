@@ -149,14 +149,14 @@ class Iono(PbData):
 
         i = raw.index('TIME\n')
         self.attrs['time'] = dt.datetime(
-            int(raw[i+1].split()[0]),      # year
-            int(raw[i+2].split()[0]),      # month
-            int(raw[i+3].split()[0]),      # day
-            int(raw[i+4].split()[0]),      # hour
-            int(raw[i+5].split()[0]),      # min
-            int(raw[i+6].split()[0]),      # sec
-            int(raw[i+7].split()[0])*1000  # microsec
-            )
+            int(raw[i+1].split()[0]),       # year
+            int(raw[i+2].split()[0]),       # month
+            int(raw[i+3].split()[0]),       # day
+            int(raw[i+4].split()[0]),       # hour
+            int(raw[i+5].split()[0]),       # min
+            int(raw[i+6].split()[0]),       # sec
+            int(raw[i+7].split()[0])*1000,  # microsec
+            tzinfo=dt.timezone.utc)         # UTC time.
 
         i = raw.index('SIMULATION\n')
         self.attrs['iter'] = int(raw[i+1].split()[0])
