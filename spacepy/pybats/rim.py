@@ -223,6 +223,35 @@ class Iono(PbData):
         self.dlon = self['n_psi'][0, 3]-self['n_psi'][0, 2]
         self.dlat = self['n_theta'][3, 0]-self['n_theta'][2, 0]
 
+    def calc_geo_coords(self):
+        '''
+        Calculate geographic latitude and longitude based on the SM lat/lon
+        used in the Ridley Ionosphere Model.
+        '''
+
+        from spacepy.time import Ticktock
+        from spacepy import coordinates as coord
+
+        # Get info from self:
+        shape = self['n_theta'].shape
+        npts = self['n_theta'].size
+
+        # Unpack things to vectorize the calculation:
+        lat = (90 - self['n_theta']).flatten()
+        lon = self['n_psi'].flatten()
+        rad = np.zeros(lon.size) + 1.
+
+        # Create coordinate object and rotate coords:
+        points = np.array([rad, lat, lon]).transpose()
+        cvals = coord.Coords(points, 'SM', 'sph')
+        cvals.ticks = Ticktock(npts*[self.attrs['time']], 'UTC')
+        geo = cvals.convert('GEO', 'sph')
+
+        self['n_glat'] = dmarray(geo.data[:, 1].reshape(shape),
+                                 {'units: degrees'})
+        self['n_glon'] = dmarray(geo.data[:, 2].reshape(shape),
+                                 {'units: degrees'})
+
     def calc_j(self):
         '''
         Calculate total horizontal current as related values.  Each will be
