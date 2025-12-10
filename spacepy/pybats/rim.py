@@ -232,6 +232,10 @@ class Iono(PbData):
         from spacepy.time import Ticktock
         from spacepy import coordinates as coord
 
+        # Do not duplicate work:
+        if 'n_glon' in self:
+            return
+
         # Get info from self:
         shape = self['n_theta'].shape
         npts = self['n_theta'].size
