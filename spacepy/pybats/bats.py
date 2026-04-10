@@ -2608,18 +2608,18 @@ class Mag(PbData):
     def __init__(self, nlines, time, gmvars=(), ievars=(), *args, **kwargs):
         super(Mag, self).__init__(*args, **kwargs)  # Init as PbData.
 
-        self['time'] = time
+        self['time'] = dmarray(time)
         self.attrs['nlines'] = nlines
 
-        self['x'] = np.zeros(nlines)
-        self['y'] = np.zeros(nlines)
-        self['z'] = np.zeros(nlines)
+        self['x'] = dmarray(np.zeros(nlines))
+        self['y'] = dmarray(np.zeros(nlines))
+        self['z'] = dmarray(np.zeros(nlines))
 
         # Create IE and GM specific containers.
         for key in gmvars:
-            self[key] = np.zeros(nlines)
+            self[key] = dmarray(np.zeros(nlines))
         for key in ievars:
-            self['ie_'+key] = np.zeros(nlines)
+            self['ie_'+key] = dmarray(np.zeros(nlines))
 
     def parse_gmline(self, i, line, namevar):
         '''
@@ -2678,9 +2678,9 @@ class Mag(PbData):
             return
 
         # New containers:
-        self['totaln'] = np.zeros(self.attrs['nlines'])
-        self['totale'] = np.zeros(self.attrs['nlines'])
-        self['totald'] = np.zeros(self.attrs['nlines'])
+        self['totaln'] = dmarray(np.zeros(self.attrs['nlines']))
+        self['totale'] = dmarray(np.zeros(self.attrs['nlines']))
+        self['totald'] = dmarray(np.zeros(self.attrs['nlines']))
 
         for key in list(self.keys()):
             if key[-2:] == 'Bn':
@@ -2767,7 +2767,7 @@ class Mag(PbData):
             self[new][-1] = (3*self[k][-1] - 4*self[k][-2] + self[k][-3]) \
                 / (dt[-1]+dt[-2])
 
-        self['dBdth'] = np.sqrt(self['dBdtn']**2+self['dBdte']**2)
+        self['dBdth'] = dmarray(np.sqrt(self['dBdtn']**2+self['dBdte']**2))
 
     def add_plot(self, value, style='-', target=None, loc=111, label=None,
                  **kwargs):
@@ -3026,12 +3026,12 @@ class MagFile(PbData):
             self.attrs['ie_namevar'] = ()
 
         # Build containers.
-        self['time'] = np.zeros(nrecords, dtype=object)
+        self['time'] = dmarray(np.zeros(nrecords, dtype=object))
         self['iter'] = np.zeros(nrecords, dtype=float)
         for name in namemag:
             self[name] = Mag(nrecords, self['time'], gm_namevar, ie_namevar)
 
-        data_buffer = np.zeros((nrecords, nmags, (len(gm_namevar)+3)))
+        data_buffer = dmarray(np.zeros((nrecords, nmags, (len(gm_namevar)+3))))
 
         # Read file data.
         for i in range(nrecords):
