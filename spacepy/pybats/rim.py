@@ -240,14 +240,13 @@ class Iono(PbData):
         shape = self['n_theta'].shape
         npts = self['n_theta'].size
 
-        # Unpack things to vectorize the calculation:
-        lat = (90 - self['n_theta']).flatten()
-        lon = self['n_psi'].flatten()
-        rad = np.zeros(lon.size) + 1.
-
         # Create coordinate object and rotate coords:
-        points = np.array([rad, lat, lon]).transpose()
-        cvals = coord.Coords(points, 'SM', 'sph')
+        x = self['n_x'].flatten()
+        y = self['n_y'].flatten()
+        z = self['n_z'].flatten()
+
+        points = np.array([x, y, z]).transpose()
+        cvals = coord.Coords(points, 'SM', 'car')
         cvals.ticks = Ticktock(npts*[self.attrs['time']], 'UTC')
         geo = cvals.convert('GEO', 'sph')
 
