@@ -1300,8 +1300,15 @@ class LogFile(PbData):
         raw = infile.readlines()
         infile.close()
 
-        # Parse the header.
+        # Grab file description:
         self.attrs['descrip'] = raw.pop(0)
+
+        # If there are any comment lines (begins with '#'), stash them:
+        self.attrs['comments'] = []
+        while raw[0].strip()[0] == '#':
+            self.attrs['comments'].append(raw.pop(0))
+
+        # Parse the header.
         raw_names = raw.pop(0)
         if not keep_case:
             raw_names = raw_names.lower()
