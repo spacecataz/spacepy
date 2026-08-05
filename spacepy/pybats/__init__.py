@@ -1860,8 +1860,10 @@ class ImfInput(PbData):
                     raise Exception('Unknown file parameter: ' + param)
 
             # Read data
-            indata = np.fromfile(f, sep=' ').reshape(
-                -1, 7 + len(self.attrs['var']))
+            indata = np.loadtxt(f, dtype=float)
+
+        # Remove extra columns and get number of points:
+        indata = indata[:, :7 + len(self.attrs['var'])]
         npoints = indata.shape[0]
         # Create containers for data.
         self['time'] = dmarray(np.empty(npoints, dtype=object))
