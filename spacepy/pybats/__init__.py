@@ -1863,6 +1863,8 @@ class ImfInput(PbData):
             indata = np.loadtxt(f, dtype=float)
 
         # Remove extra columns and get number of points:
+        if len(indata.shape) == 1:
+            indata = indata.reshape(1, indata.size)
         indata = indata[:, :7 + len(self.attrs['var'])]
         npoints = indata.shape[0]
         # Create containers for data.
