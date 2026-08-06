@@ -900,6 +900,31 @@ class TestImfInput(unittest.TestCase):
         # Test for floor of sub-millisecond times:
         self.assertEqual(self.knownSubMilli, imf2['time'][0])
 
+    def testExtraColumns(self):
+        '''
+        Test ability to open a file that has extra, unspecified columns.
+        '''
+
+        # Create a test file with two extra columns:
+        with open(self.file_single, 'r') as f_in:
+            with open('imf_extracol.tmp', 'w') as f_out:
+               tmpline = ''
+               while '#START' not in tmpline:
+                   tmpline = f_in.readline()
+                   f_out.write(tmpline)
+               for l in f_in.readlines():
+                   f_out.write(l[:-1] + '    1234    1234\n')
+
+        # Read file and validate:
+        imf_excol = pb.ImfInput('imf_extracol.tmp')
+        self.assertEqual(self.knownImfBz[0], imf_excol['bz'][0])
+        self.assertEqual(self.knownImfBz[-1], imf_excol['bz'][-1])
+        self.assertEqual(self.knownImfRho[0], imf_excol['n'][0])
+        self.assertEqual(self.knownImfRho[-1], imf_excol['n'][-1])
+        self.assertEqual(self.knownImfTemp[0], imf_excol['t'][0])
+        self.assertEqual(self.knownImfTemp[-1], imf_excol['t'][-1])
+
+
     def testWrite(self):
         # Test that files are correctly written to file.
 
