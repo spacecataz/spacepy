@@ -683,13 +683,15 @@ def smartTimeTicks(time):
     return(Mtick, mtick, fmt)
 
 
-def set_target(target, figsize=None, loc=None, polar=False):
+def set_target(target, figsize=None, loc=None, polar=False, **kwargs):
     '''
     Given a *target* on which to plot a figure, determine if that *target*
     is **None** or a matplotlib figure or axes object.  Based on the type
     of *target*, a figure and/or axes will be either located or generated.
     Both the figure and axes objects are returned to the caller for further
     manipulation.  This is used in nearly all *add_plot*-type methods.
+
+    Extra keyword arguments are passed to the *add_subplot* method.
 
     Parameters
     ==========
@@ -725,18 +727,18 @@ def set_target(target, figsize=None, loc=None, polar=False):
     '''
     # Is target an axes?  Make no new items.
     if isinstance(target, plt.Axes):
-        ax  = target
+        ax = target
         fig = ax.figure
-    else: # Make a new axis
+    else:  # Make a new axis
         # Make a new figure if target isn't one
         fig = target if isinstance(target, plt.Figure) \
               else plt.figure(figsize=figsize)
         if loc is None:
-            ax = fig.add_subplot(polar=polar)
-            if ax is None: # matplotlib <3.1, no default subplot position
-                ax = fig.add_subplot(111, polar=polar)
+            ax = fig.add_subplot(polar=polar, **kwargs)
+            if ax is None:  # matplotlib <3.1, no default subplot position
+                ax = fig.add_subplot(111, polar=polar, **kwargs)
         else:
-            ax = fig.add_subplot(loc, polar=polar)
+            ax = fig.add_subplot(loc, polar=polar, **kwargs)
     return fig, ax
 
 
@@ -1373,7 +1375,7 @@ def add_arrows(lines, n=3, size=12, style='->', dorestrict=False,
     *lines* can be either :class:`~matplotlib.lines.Line2D`, a list or tuple
     of lines, or a :class:`~matplotlib.collections.LineCollection` object.
 
-    For each line, arrows will be added using 
+    For each line, arrows will be added using
     :meth:`~matplotlib.axes.Axes.annotate`.  Arrows will be spread evenly
     over the line using the number of points in the line as the metric for
     spacing.  For example, if a line has 120 points and 3 arrows are requested,
