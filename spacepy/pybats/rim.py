@@ -223,6 +223,23 @@ class Iono(PbData):
         self.dlon = self['n_psi'][0, 3]-self['n_psi'][0, 2]
         self.dlat = self['n_theta'][3, 0]-self['n_theta'][2, 0]
 
+    def calc_xyz(self):
+        '''
+        Calculate X, Y, and Z coordinates given the SM lat/lon.
+        '''
+
+        # if 'n_x' in self:
+        #     return
+
+        d2r = np.pi/180.
+        self['n_x'] = np.sin(d2r*self['n_theta']) * np.cos(d2r*self['n_psi'])
+        self['n_y'] = np.sin(d2r*self['n_theta']) * np.sin(d2r*self['n_psi'])
+        self['n_z'] = np.cos(d2r*self['n_theta'])
+
+        self['s_x'] = np.sin(d2r*self['s_theta']) * np.cos(d2r*self['s_psi'])
+        self['s_y'] = np.sin(d2r*self['s_theta']) * np.sin(d2r*self['s_psi'])
+        self['s_z'] = np.cos(d2r*self['s_theta'])
+
     def calc_geo_coords(self):
         '''
         Calculate geographic latitude and longitude based on the SM lat/lon
@@ -241,11 +258,13 @@ class Iono(PbData):
         npts = self['n_theta'].size
 
         # Create coordinate object and rotate coords:
+        if 'n_x' not in self:
+            self.calc_xyz()
         x = self['n_x'].flatten()
         y = self['n_y'].flatten()
         z = self['n_z'].flatten()
-
         points = np.array([x, y, z]).transpose()
+
         cvals = coord.Coords(points, 'SM', 'car')
         cvals.ticks = Ticktock(npts*[self.attrs['time']], 'UTC')
         geo = cvals.convert('GEO', 'sph')
