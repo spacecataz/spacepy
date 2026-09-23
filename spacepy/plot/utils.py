@@ -18,6 +18,7 @@ import bisect
 import datetime
 import itertools
 
+import numpy as np
 import matplotlib
 import matplotlib.axis
 import matplotlib.dates
@@ -682,6 +683,57 @@ def smartTimeTicks(time):
         fmt =  DateFormatter('%Y')
     return(Mtick, mtick, fmt)
 
+
+def apply_subplot_letters(axes, xy=(.05, .85), size=24, caps=False,
+                          istart=0, order='C', **kwargs):
+    '''
+    For a list of axes, add subplot letters (e.g,. "a", "b", etc.) for use in
+    publication diagrams (e.g., see Figure 1c). By default, the letter is
+    placed in a white box for contrast. This can be controlled by changing
+    the `bbox` kwarg (see `matplotlib.pyplot.text` for details).
+
+    Extra kwargs are passed to the `matplotlib.pyplot.text` method.
+
+    Parameters
+    ----------
+    axes : list or array of `matplotlib.Axes`-like objects
+        The axes to label in order.
+    xy : tuple of floats, defaults to (0.05, .85)
+        The relative location of the label, e.g., (0.05, .85) to place the
+        label 5% and 85% away from the lower left corner.
+    size : int, defaults to 24
+        The font size to use.
+    caps : bool, defaults to False
+        Use capital letters.
+    istart : int, defaults to 0
+        Set the alphabet index of the first plot. For example, if istart is
+        set to 5, the first letter used will be 'e'. Defaults to 0, or 'a'.
+    order : str, defaults to 'C'
+        For arrays of axes, set the labeling order as 'C' (C-type, row major)
+        or 'F' (Fortran-type, column major). Defaults to 'C'.
+    '''
+
+    # Create letter label string:
+    letters = 'abcdefghijklmnopqrstuvwxyz'
+    if caps:
+        letters = letters.upper()
+
+    # convenience:
+    x, y = xy
+
+    # Update kwargs:
+    if 'fontsize' not in kwargs:
+        kwargs['fontsize'] = size
+    if 'bbox' not in kwargs:
+        kwargs['bbox'] = dict(facecolor='w')
+
+    # Flatten our axes for easy looping:
+    axes = np.array(axes)
+
+    # Apply to each axes:
+    for ax, l in zip(axes.flatten(order=order), letters):
+        ax.text(x, y,  l, ha='center', va='center',
+                transform=ax.transAxes, **kwargs)
 
 def set_target(target, figsize=None, loc=None, polar=False, **kwargs):
     '''
