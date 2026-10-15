@@ -663,8 +663,17 @@ class Bats2d(IdlFile):
     def switch_frame(self, *args, **kwargs):
         '''
         For files that have more than one data frame (i.e., ``*.outs`` files),
-        load data from the *iframe*-th frame into the object replacing what is
-        currently loaded.
+        load data from a desired frame at time *retime* into the object
+        replacing what is currently loaded.
+
+        *reftime* can be an integer, float, or datetime. An integer argument
+        will load the *iframe*-th frame. A float or datetime argument will
+        search for a runtime (in seconds) or datetime within the possible
+        frames and load the first match it finds.
+
+        The optional kwarg *tol* sets the tolerance for a near-match. For
+        example, setting a *tol* of 5 will switch to the frame that is within
+        5 seconds of the value of *tframe*. The default value is 1.
         '''
 
         # Reset our quad tree before reading our file:

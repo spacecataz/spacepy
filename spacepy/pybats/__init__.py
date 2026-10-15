@@ -1156,12 +1156,38 @@ class IdlFile(PbData):
         self.attrs['runtimes'] = [0, 0]
         self.attrs['times'] = [0, 0]
 
-    def switch_frame(self, iframe):
+    def switch_frame(self, reftime, tol=1.0):
         '''
         For files that have more than one data frame (i.e., ``*.outs`` files),
-        load data from the *iframe*-th frame into the object replacing what is
-        currently loaded.
+        load data from a desired frame at time *retime* into the object
+        replacing what is currently loaded.
+
+        *reftime* can be an integer, float, or datetime. An integer argument
+        will load the *iframe*-th frame. A float or datetime argument will
+        search for a runtime (in seconds) or datetime within the possible
+        frames and load the first match it finds.
+
+        The optional kwarg *tol* sets the tolerance for a near-match. For
+        example, setting a *tol* of 5 will switch to the frame that is within
+        5 seconds of the value of *tframe*. The default value is 1.
         '''
+
+        import datetime as dt
+
+        if isinstance(reftime, int):
+            # Integer: jump to iframe.
+            iframe = reftime
+        elif isinstance(reftime, dt.datetime):
+            # Datetime: find iframe within TOL seconds of given datetime
+            diff = np.abs([(t-reftime).total_seconds()
+                           for t in self.attrs['times']])
+            iframe = int(np.argmin(diff))
+            if diff[iframe] >= tol:
+                raise ValueError(f"No frame found with {tol}s of {reftime}")
+        elif isinstance(reftime, float):
+            # Float: find iframe within TOL seconds of given runtime
+            iframe = np.argmin(np.abs(self.attrs['runtimes'] - reftime))
+            raise ValueError(f"No frame found with {tol}s of {reftime}")
 
         # Ensure that given frame exists within object:
         if iframe < -self.attrs['nframe'] or iframe >= self.attrs['nframe']:
