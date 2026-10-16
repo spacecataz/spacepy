@@ -593,6 +593,7 @@ def applySmartTimeTicks(ax, time, dolimit=True, dolabel=False):
         ax.set_xlabel('Time from {0}'.format(time[0].isoformat()))
     return True
 
+
 def smartTimeTicks(time):
     """
     Returns major ticks, minor ticks and format for time-based plots
