@@ -8,6 +8,7 @@ Copyright 2010 Los Alamos National Security, LLC.
 '''
 
 import numpy as np
+import matplotlib.pyplot as plt
 from spacepy.plot import set_target
 from spacepy.pybats import PbData, dmarray
 
@@ -113,6 +114,15 @@ class Iono(PbData):
         super(Iono, self).__init__(*args, **kwargs)
         self.attrs['file'] = infile
         self.readascii()
+
+        # Create a list of variables sans hemisphere prefix:
+        self.namevar = []
+        for x in self.keys():
+            variable = x[2:]
+            if variable in ['theta', 'psi']:
+                continue
+            if variable not in self.namevar:
+                self.namevar.append(variable)
 
     def readascii(self):
         '''
@@ -257,22 +267,23 @@ class Iono(PbData):
         shape = self['n_theta'].shape
         npts = self['n_theta'].size
 
-        # Create coordinate object and rotate coords:
-        if 'n_x' not in self:
-            self.calc_xyz()
-        x = self['n_x'].flatten()
-        y = self['n_y'].flatten()
-        z = self['n_z'].flatten()
-        points = np.array([x, y, z]).transpose()
+        # Create coordinate object and rotate coords in both hemispheres:
+        for h in ('n_', 's_'):
+            if h+'x' not in self:
+                self.calc_xyz()
+            x = self[h+'x'].flatten()
+            y = self[h+'y'].flatten()
+            z = self[h+'z'].flatten()
+            points = np.array([x, y, z]).transpose()
 
-        cvals = coord.Coords(points, 'SM', 'car')
-        cvals.ticks = Ticktock(npts*[self.attrs['time']], 'UTC')
-        geo = cvals.convert('GEO', 'sph')
+            cvals = coord.Coords(points, 'SM', 'car')
+            cvals.ticks = Ticktock(npts*[self.attrs['time']], 'UTC')
+            geo = cvals.convert('GEO', 'sph')
 
-        self['n_glat'] = dmarray(geo.data[:, 1].reshape(shape),
-                                 {'units: degrees'})
-        self['n_glon'] = dmarray(geo.data[:, 2].reshape(shape),
-                                 {'units: degrees'})
+            self[h+'glat'] = dmarray(geo.data[:, 1].reshape(shape),
+                                     {'units: degrees'})
+            self[h+'glon'] = dmarray(geo.data[:, 2].reshape(shape),
+                                     {'units: degrees'})
 
     def calc_j(self):
         '''
@@ -302,6 +313,10 @@ class Iono(PbData):
 
         '''
 
+        # Do not duplicate work:
+        if 'n_jphi' in self:
+            return
+
         # Loop over hemispheres:
         for h in ('n_', 's_'):
             # Calculate total horizontal current
@@ -312,6 +327,9 @@ class Iono(PbData):
             # Calculate total azimuthal current (i.e., electrojets):
             self[h+'jphi'] = self[h+'jy'] * np.cos(np.pi/180. * self[h+'psi'])\
                 - self[h+'jx'] * np.sin(np.pi/180. * self[h+'psi'])
+
+        # Add to list of variables:
+        self.namevar += ['j', 'jphi']
 
         return True
 
@@ -527,6 +545,176 @@ class Iono(PbData):
             txt = '{:02.0f}'.format(theta)+r'$^{\circ}$'
             ax.text(pi/4., 90.-theta, txt, color='w', weight='heavy', **opts)
             ax.text(pi/4., 90.-theta, txt, color='k', weight='light', **opts)
+
+        return fig, ax, cnt1, cbar
+
+    def create_asi(self, glon, glat, **kwargs):
+        '''
+        Create and return an All-Sky Imager (ASI) extraction.
+
+        Parameters
+        ==========
+        lon, lat : float
+            The geographic latitude and longitude of the ASI.
+
+        '''
+
+        return AllSky(self, glon, glat, **kwargs)
+
+
+class AllSky(PbData):
+    '''
+    A class for generating and handling virtual All-Sky imagers (ASIs)
+    generated from an IE 2D output cut.
+
+    The ASI data is arranged primarily in a local coordinate system:
+    *eta* is the polar angle from local zenith (i.e., 0 is straight up,
+          90 is tangent to the horizontal).
+    *alpha* is the azimuthal angle from local north (i.e., 180 is
+            geographic south).
+
+    Example usage:
+
+    The easiest way to generate a virtual all-sky image is from the
+    `generate_asi()` method of the `pybats.rim.Iono` class:
+
+    >>> from spacepy.pybats import rim
+    >>> iono = rim.Iono('it020511_170640_000.idl.gz')
+    >>> asi = rim.gen_asi(15.83, 78.2)
+
+    Parameters
+    ==========
+    lon, lat : float
+        The geographic latitude and longitude of the ASI.
+    iono : `spacepy.pybats.rim.Iono`
+        The underlying RIM dataset from which to create the image.
+    fov : float, defaults to 4.455
+        The half-angle field-of-view of the overhead aurora. Default values
+        correspond to typical ASI capabilities.
+    deta, dalpha : float, .5 and 2, respectively
+        The "resolution" of the camera in the polar and azimuthal directions,
+        respectively. Values are given in degrees.
+
+    '''
+
+    def __init__(self, iono, lon, lat, deta=.5, dalpha=2, fov=4.455,
+                 *args, **kwargs):
+
+        from matplotlib import tri
+
+        super(AllSky, self).__init__(*args, **kwargs)
+
+        # Save the file name that created the object.
+        self.attrs['file'] = iono.attrs['file']
+        self.attrs['lon'] = lon
+        self.attrs['lat'] = lat
+
+        # Get hemisphere prefix:
+        hemi = 'n_' if lat > 0 else 's_'
+
+        # Create field-of-view in geographic coordinates:
+        etas, alphas = np.meshgrid(np.arange(-fov, fov, deta),
+                                   np.arange(0, 360., dalpha))
+
+        # Now turn that into a set of lat-lon values
+        dlats = etas * np.sin(np.deg2rad(alphas))
+        dlons = etas * np.cos(np.deg2rad(alphas))
+
+        # Rotate to standard polar coordinates:
+        lats = lat + dlats
+        lons = lon + dlons / np.sin(np.deg2rad(90. - lats))
+
+        # Stash grid information to object:
+        self['glon'] = dmarray(lon, {'units': 'degrees'})
+        self['glat'] = dmarray(lat, {'units': 'degrees'})
+        self['eta'] = dmarray(etas, {'units': 'degrees'})
+        self['alpha'] = dmarray(alphas, {'units': 'degrees'})
+
+        # Prepare Iono object by calculating geographic coordinates:
+        iono.calc_geo_coords()
+        # Create triangulation object:
+        triang = tri.Triangulation(iono['n_glon'].flatten(),
+                                   iono['n_glat'].flatten())
+
+        for x in iono.namevar:
+            interp = tri.LinearTriInterpolator(triang, iono[hemi+x].flatten())
+            self[x] = dmarray(interp(lons, lats),
+                              {'units': iono[hemi+x].attrs['units']})
+
+    def extract_keyo(self, var):
+        '''
+        Extract and return a 1D keyogram (south-to-north slice) of variable
+        *var*.
+        '''
+
+        pass
+
+    def add_pov(self, var, target=None, n=50, vmin=False, vmax=False,
+                cmap='Greys_r', add_cbar=False, label=None, loc=111,
+                xticksize=12, yticksize=12, **kwargs):
+        '''
+        Create an ASI POV of variable *var*.
+
+        Parameters
+        ==========
+        var : str
+           The name of the variable to plot.
+
+        Returns
+        =======
+        fig : matplotlib figure object
+        ax  : matplotlib axes object
+        cnt : matplotlib contour object
+        cb  : matplotlib colorbar object
+
+        Other Parameters
+        ================
+        target : Figure or Axes
+            If None (default), a new figure is generated from scratch.
+            If a matplotlib Figure object, a new axis is created
+            to fill that figure.
+            If a matplotlib Axes object, the plot is placed
+            into that axis.
+        loc : int
+            Use to specify the subplot placement of the axis
+            (e.g. loc=212, etc.) Used if target is a Figure or None.
+            Default 111 (single plot).
+        n : int
+            Set number of levels.  Default is 50.  If unfilled lines are
+            added (see *dolines* kwarg), multiples of three provide coherence
+            between filled and unfilled contours.
+        vmin, vmax : real
+            Set the max/min value for the color bar.  Default is set by data.
+        cmap : str
+            Set the colormap.  Default is Matplotlib's
+        add_cbar : bool
+            Add colorbar to plot.  Default is **False** which will
+            not add one to the plot.
+        label : str or None
+            Label to place at top of plot.  Defaults to variable name.
+        xticksize : int
+            Size of longitude markers in text points.  Defaults to 12.
+        yticksize : int
+            Size of latitude markers in text points.  Defaults to 12.
+
+        Extra keywords are passed to the pcolor routine.
+        '''
+
+        if vmin is False:
+            vmin = self[var].min()
+        if vmax is False:
+            vmax = self[var].max()
+
+        fig, ax = set_target(target, polar=True, loc=loc)
+        cnt1 = ax.pcolor(np.deg2rad(self['alpha'] + 180.0),
+                         np.abs(self['eta']), np.array(self[var]),
+                         vmin=vmin, vmax=vmax, cmap=cmap, **kwargs)
+
+        if add_cbar:
+            cbar = plt.colorbar(cnt1, shrink=0.75, pad=0.08, ax=ax)
+            cbar.set_label(tex_label(self[var].attrs['units']))
+        else:
+            cbar = False
 
         return fig, ax, cnt1, cbar
 
