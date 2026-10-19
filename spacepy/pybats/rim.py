@@ -100,6 +100,49 @@ def tex_label(varname):
     return label
 
 
+def calc_fov(lat=0.0, alt=110.0, elev=10.0):
+    '''
+    This function calculates the half-angle of field-of-view of a
+    ground all-sky camera station that is `height` off of the ground and
+    corrects for latitude effects.
+
+
+    Parameters
+    ----------
+    lat : float, defaults to 0
+        Latitude of observing station, in degrees.
+    alt : float, defaults to 110.0
+        Height of image from the ground, in km.
+    elev : float, defaults to 10.0
+        The elevation of the edge of the image above the horizon, in degrees.
+
+    Returns
+    -------
+    dlon, dlat : float
+        Width of the view in lat/lon given the input latitude.
+    rho : float
+        The radius of the FOV, where rho = sqrt(lat**2 + lon**2)
+    '''
+
+    # Set Earth radius:
+    Re = 6378.14
+
+    # Convert degrees to radians.
+    elev *= np.pi/180.
+    lat *= np.pi/180.
+
+    # View circle radius, in km:
+    rho0 = alt * (2*Re + alt) / (2*Re*np.sin(elev))
+
+    # View circle radius at height:
+    rho = alt * (2*Re + alt) / (2*Re*np.sin(elev) + rho0)
+
+    # Calculate dlat, dlon:
+    dlat, dlon = 180/np.pi * rho / Re, 180/np.pi * rho / (Re * np.cos(lat))
+
+    return dlon, dlat
+
+
 class Iono(PbData):
     '''
     A class for handling 2D output from the Ridley Ionosphere Model.
@@ -387,13 +430,178 @@ class Iono(PbData):
         self['s_Iup'] = units*R**2 * np.sum(integrand[loc_up])
         self['s_Idown'] = units*R**2 * np.sum(integrand[loc_do])
 
-    def add_cont(self, var, target=None, n=50, maxz=False, dolines=False,
-                 dofill=True, cmap=False, add_cbar=False, label=None, loc=111,
-                 xticksize=12, yticksize=12, max_colat=40, **kwargs):
+    def add_contour(self, varname, target=None, n=50, maxz=False,
+                    dolines=False, dofill=True, cmap=False, add_cbar=False,
+                    label=None, loc=111, xticksize=12, yticksize=12,
+                    max_colat=40, **kwargs):
         '''
         Create a polar contour of variable *var*.  Plot will be either drawn
         on a new matplotlib figure and axes, or you can specify a plot target
         using the *target* kwarg.
+
+        Parameters
+        ==========
+        var : str
+           The name of the variable to plot.
+
+        Returns
+        =======
+        fig : matplotlib figure object
+        ax  : matplotlib axes object
+        cnt : matplotlib contour object
+        cb  : matplotlib colorbar object
+
+        Other Parameters
+        ================
+        target : Figure or Axes
+            If None (default), a new figure is generated from scratch.
+            If a matplotlib Figure object, a new axis is created
+            to fill that figure.
+            If a matplotlib Axes object, the plot is placed
+            into that axis.
+        loc : int
+            Use to specify the subplot placement of the axis
+            (e.g. loc=212, etc.) Used if target is a Figure or None.
+            Default 111 (single plot).
+        n : int
+            Set number of levels.  Default is 50.  If unfilled lines are
+            added (see *dolines* kwarg), multiples of three provide coherence
+            between filled and unfilled contours.
+        dofill : bool, defaults to true
+            Use filled contours.
+        dolines : bool, defaults to True
+            Add unfilled black solid/dashed contours to plot for additional
+            contrast.  Default is **True**.
+        maxz : real
+            Set the max/min value for the color bar.  Default is set by data.
+        max_colat : real
+            Set the co-latitude range of the plot, in degrees.  Defaults to 40.
+        cmap : str
+            Set the colormap.  Default is to use Matplotlib's "Reds" for data
+            that is strictly positive and "Seismic" for diverging data.
+            Alternatively, legacy Ridley Ionosphere Model color maps can be
+            loaded using "l_wr" (white red) or "l_bwr" (blue-white-red),
+            where the "l\\_" prefix indicates legacy and not Matplotlib color
+            maps.
+        add_cbar : bool
+            Add colorbar to plot.  Default is **False** which will
+            not add one to the plot.
+        label : str or None
+            Label to place at top of plot.  Defaults to variable name.
+        xticksize : int
+            Size of longitude markers in text points.  Defaults to 12.
+        yticksize : int
+            Size of latitude markers in text points.  Defaults to 12.
+
+        Extra keywords are passed to the contourf routine.
+
+        '''
+        # Get only what we need to decrease runtime.
+        from math import pi
+        from numpy import linspace
+        from matplotlib.colors import Normalize
+        from matplotlib.ticker import MaxNLocator, MultipleLocator
+        from matplotlib.pyplot import colorbar
+
+        fig, ax = set_target(target, polar=True, loc=loc)
+
+        # If dofill is off, turn on lines.
+        if not dofill:
+            dolines = True
+
+        hemi = varname[:2]
+
+        # user defined variables may not have hemisphere marking.
+        # Assume nothern hemi in those cases.
+        if hemi != 'n_' and hemi != 's_':
+            hemi = 'n_'
+
+        # Set ticks for polar axes.
+        if label is None:
+            label = tex_label(varname)
+        lt_labels = ['06', label, '18', '00']
+        xticks = [0, pi/2, pi, 3*pi/2]
+        lct = MultipleLocator(10)
+        minz = self[varname].min()
+        if minz < 0.0:
+            if not maxz:
+                maxz = max([abs(minz), self[varname].max()])
+            crange = Normalize(vmin=-1.*maxz, vmax=maxz)
+            levs = linspace(-1.*maxz, maxz, n)
+        else:
+            if not maxz:
+                maxz = self[varname].max()
+            crange = Normalize(vmin=0., vmax=maxz)
+            levs = linspace(0., maxz, n)
+
+        # Get color map if not given:
+        if not cmap:
+            if self[varname].min() >= 0.0:
+                cmap = 'Reds'
+            else:
+                cmap = 'seismic'
+        # Search for legacy maps:
+        elif 'l_' in cmap:
+            cmap = get_iono_cb(cmap[2:])
+
+        # Set the latitude based on hemisphere:
+        theta = self[hemi+'theta']
+        if 's_' in hemi:
+            theta = 180-self[hemi+'theta']
+
+        # Create contour:
+        if dofill:
+            cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                               np.array(self[varname]), levs, norm=crange,
+                               cmap=cmap, **kwargs)
+        else:
+            cnt1 = None
+
+        # Set xtick label size, increase font of top label.
+        labels = ax.get_xticklabels()
+        for lab in labels:
+            lab.set_size(xticksize)
+        labels[1].set_size(xticksize*1.25)
+
+        if dolines:
+            nk = int(round(n/3.0))
+            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                              np.array(self[varname]), nk, colors='k')
+            # clabel(cnt2,fmt='%3i',fontsize=10)
+
+        if add_cbar:
+            cbarticks = MaxNLocator(7)
+            contour = cnt1 if dofill else cnt2
+            cbar = colorbar(contour, ticks=cbarticks, shrink=0.75,
+                            pad=0.08, ax=ax)
+            cbar.set_label(tex_label(self[varname].attrs['units']))
+        else:
+            cbar = False
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(lt_labels)
+        ax.yaxis.set_major_locator(lct)
+        ax.set_ylim([0, max_colat])
+
+        # Use text function to manually add pretty ticks.
+        ax.set_yticklabels('')  # old ticks off.
+        opts = {'size': yticksize, 'rotation': -45,
+                'ha': 'center', 'va': 'center'}
+        for theta in [80., 70., 60.]:
+            txt = '{:02.0f}'.format(theta)+r'$^{\circ}$'
+            ax.text(pi/4., 90.-theta, txt, color='w', weight='heavy', **opts)
+            ax.text(pi/4., 90.-theta, txt, color='k', weight='light', **opts)
+
+        return fig, ax, cnt1, cbar
+
+    def add_cont(self, *args, **kwargs):
+        '''For reverse compatability only.'''
+        return self.add_contour(*args, **kwargs)
+
+    def add_contour_geo(self, varname, target=None, loc=111, add_cbar=False,
+                        cmap='Greens', dofill=True, dolines=False):
+        '''
+        Create a contour of variable *varname* using Cartopy and geographic
+        coordinates.
 
         Parameters
         ==========
@@ -451,106 +659,58 @@ class Iono(PbData):
         Extra keywords are passed to the contourf routine.
 
         '''
-        # Get only what we need to decrease runtime.
-        from math import pi
-        from numpy import linspace
-        from matplotlib.colors import Normalize
-        from matplotlib.ticker import MaxNLocator, MultipleLocator
-        from matplotlib.pyplot import colorbar
 
-        fig, ax = set_target(target, polar=True, loc=loc)
+        import cartopy.crs as ccrs
+        # from cartopy.feature.nightshade import Nightshade
 
-        # If dofill is off, turn on lines.
-        if not dofill:
-            dolines = True
+        # Get geographic lat/lon and time for convenience.
+        tnow = self.attrs['time']
+        self.calc_geo_coords()
+        glat, glon = self['n_glat'], self['n_glon']
 
-        hemi = var[:2]
+        # get the solar position. this allows us to orient noon on top
+        # slon, slat = solar_position(tnow)
 
-        # user defined variables may not have hemisphere marking.
-        # Assume nothern hemi in those cases.
-        if hemi != 'n_' and hemi != 's_':
-            hemi = 'n_'
+        # PLOT USING APPROPRIATE STYLE:
+        # with plt.style.context('seaborn-v0_8-poster'):
 
-        # Set ticks for polar axes.
-        if label is None:
-            label = tex_label(var)
-        lt_labels = ['06', label, '18', '00']
-        xticks = [0, pi/2, pi, 3*pi/2]
-        lct = MultipleLocator(10)
-        minz = self[var].min()
-        if minz < 0.0:
-            if not maxz:
-                maxz = max([abs(minz), self[var].max()])
-            crange = Normalize(vmin=-1.*maxz, vmax=maxz)
-            levs = linspace(-1.*maxz, maxz, n)
-        else:
-            if not maxz:
-                maxz = self[var].max()
-            crange = Normalize(vmin=0., vmax=maxz)
-            levs = linspace(0., maxz, n)
+        # Create figure using set_target syntax:
+        fig, ax = set_target(target, figsize=(8, 8), loc=loc,
+                             projection=ccrs.Orthographic(180, 90))
+        # note: projection=ccrs.Orthographic(slon + 180, 90))
 
-        # Get color map if not given:
-        if not cmap:
-            if self[var].min() >= 0.0:
-                cmap = 'Reds'
-            else:
-                cmap = 'seismic'
-        # Search for legacy maps:
-        elif 'l_' in cmap:
-            cmap = get_iono_cb(cmap[2:])
-
-        # Set the latitude based on hemisphere:
-        theta = self[hemi+'theta']
-        if 's_' in hemi:
-            theta = 180-self[hemi+'theta']
-
-        # Create contour:
         if dofill:
-            cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
-                               np.array(self[var]), levs, norm=crange,
-                               cmap=cmap, **kwargs)
+            cont = ax.scatter(glon, glat, c=self[varname],
+                              cmap=cmap, transform=ccrs.PlateCarree())
         else:
-            cnt1 = None
-
-        # Set xtick label size, increase font of top label.
-        labels = ax.get_xticklabels()
-        for lab in labels:
-            lab.set_size(xticksize)
-        labels[1].set_size(xticksize*1.25)
+            cont = None
 
         if dolines:
-            nk = int(round(n/3.0))
-            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
-                              np.array(self[var]), nk, colors='k')
-            # clabel(cnt2,fmt='%3i',fontsize=10)
+            cont2 = ax.tricontour(glon.flatten(), glat.flatten(),
+                                  self[varname].flatten(), int(50/3),
+                                  colors='k', linewidths=1,
+                                  transform=ccrs.PlateCarree(), )
 
         if add_cbar:
-            cbarticks = MaxNLocator(7)
-            contour = cnt1 if dofill else cnt2
-            cbar = colorbar(contour, ticks=cbarticks, shrink=0.75,
-                            pad=0.08, ax=ax)
-            cbar.set_label(tex_label(self[var].attrs['units']))
+            contour = cont if dofill else cont2
+            cbar = plt.colorbar(contour, shrink=0.75, pad=0.08, ax=ax)
+            cbar.set_label(tex_label(self[varname].attrs['units']))
         else:
             cbar = False
-        ax.set_xticks(xticks)
-        ax.set_xticklabels(lt_labels)
-        ax.yaxis.set_major_locator(lct)
-        ax.set_ylim([0, max_colat])
 
-        # Use text function to manually add pretty ticks.
-        ax.set_yticklabels('')  # old ticks off.
-        opts = {'size': yticksize, 'rotation': -45,
-                'ha': 'center', 'va': 'center'}
-        for theta in [80., 70., 60.]:
-            txt = '{:02.0f}'.format(theta)+r'$^{\circ}$'
-            ax.text(pi/4., 90.-theta, txt, color='w', weight='heavy', **opts)
-            ax.text(pi/4., 90.-theta, txt, color='k', weight='light', **opts)
+        # North pole:
+        # ax.plot(0, 90, 'ro', transform=ccrs.PlateCarree())
+        # ax.add_feature(Nightshade(tnow, alpha=0.2))
+        ax.coastlines()
+        ax.set_global()
 
-        return fig, ax, cnt1, cbar
+        return fig, ax, cont, cbar
 
     def create_asi(self, glon, glat, **kwargs):
         '''
         Create and return an All-Sky Imager (ASI) extraction.
+
+        See `spacepy.pybats.rim.AllSky` for additional kwargs.
 
         Parameters
         ==========
@@ -591,13 +751,13 @@ class AllSky(PbData):
     fov : float, defaults to 4.455
         The half-angle field-of-view of the overhead aurora. Default values
         correspond to typical ASI capabilities.
-    deta, dalpha : float, .5 and 2, respectively
+    deta, dalpha : float, .1 and 2, respectively
         The "resolution" of the camera in the polar and azimuthal directions,
         respectively. Values are given in degrees.
 
     '''
 
-    def __init__(self, iono, lon, lat, deta=.5, dalpha=2, fov=4.455,
+    def __init__(self, iono, lon, lat, deta=.1, dalpha=2, fov=4.455,
                  *args, **kwargs):
 
         from matplotlib import tri
@@ -606,8 +766,8 @@ class AllSky(PbData):
 
         # Save the file name that created the object.
         self.attrs['file'] = iono.attrs['file']
-        self.attrs['lon'] = lon
-        self.attrs['lat'] = lat
+        self.attrs['glon'] = lon
+        self.attrs['glat'] = lat
 
         # Get hemisphere prefix:
         hemi = 'n_' if lat > 0 else 's_'
@@ -625,8 +785,8 @@ class AllSky(PbData):
         lons = lon + dlons / np.sin(np.deg2rad(90. - lats))
 
         # Stash grid information to object:
-        self['glon'] = dmarray(lon, {'units': 'degrees'})
-        self['glat'] = dmarray(lat, {'units': 'degrees'})
+        self['glon'] = dmarray(lons, {'units': 'degrees'})
+        self['glat'] = dmarray(lats, {'units': 'degrees'})
         self['eta'] = dmarray(etas, {'units': 'degrees'})
         self['alpha'] = dmarray(alphas, {'units': 'degrees'})
 
@@ -649,9 +809,56 @@ class AllSky(PbData):
 
         pass
 
-    def add_pov(self, var, target=None, n=50, vmin=False, vmax=False,
-                cmap='Greys_r', add_cbar=False, label=None, loc=111,
-                xticksize=12, yticksize=12, **kwargs):
+    def add_fov(self, target,  label=None, lsize=14, ellipse_kwargs={}):
+        '''
+        Add an ellipse to an existing field-of-view to a matplotlib Axes object
+        that is using Cartopy's PlateCarree projection (`target`) that
+        represents the AllSky object's field-of-view.
+
+        Parameters
+        ----------
+        target : Matplotlib Axes object
+            The axes object onto which the POV will be added.
+        lon, lat : float
+            The center of the POV eclipse, in degrees.
+        dlon, dlat : float
+            The lat/lon widths of the POV oval, in degrees.
+        label : string, defaults to None
+            Create label at circle center.
+        lsize : float, defaults to 14
+            Label font size in points.
+        ellipse_kwargs : dict
+            Dictionary of kwargs to send to the MPL ellipse patch.
+            Note that kwarg 'fill' is always set to False.
+        '''
+
+        from matplotlib.patches import Ellipse
+        import cartopy.crs as ccrs
+
+        # Get lat/lon of ASI station:
+        lon, lat = self.attrs['glon'], self.attrs['glat']
+
+        # Set defaults in ellipse kwargs:
+        if 'ec' not in ellipse_kwargs:
+            ellipse_kwargs['ec'] = 'crimson'
+        if 'lw' not in ellipse_kwargs:
+            ellipse_kwargs['lw'] = 2.0
+        ellipse_kwargs['fill'] = False
+
+        dlon, dlat = calc_fov(lat)
+
+        pov = Ellipse((lon, lat), 2*dlon, 2*dlat, transform=ccrs.PlateCarree(),
+                      **ellipse_kwargs)
+        target.add_patch(pov)
+
+        # Add label to center:
+        if label is not None:
+            target.text(lon, lat, label, size=lsize,
+                        transform=ccrs.PlateCarree(), ha='center', va='center')
+
+    def add_view(self, var, target=None, n=50, vmin=False, vmax=False,
+                 cmap='Greys_r', add_cbar=False, label=None, loc=111,
+                 xticksize=12, yticksize=12, **kwargs):
         '''
         Create an ASI POV of variable *var*.
 
@@ -706,7 +913,7 @@ class AllSky(PbData):
             vmax = self[var].max()
 
         fig, ax = set_target(target, polar=True, loc=loc)
-        cnt1 = ax.pcolor(np.deg2rad(self['alpha'] + 180.0),
+        cnt1 = ax.pcolor(np.deg2rad(self['alpha']),
                          np.abs(self['eta']), np.array(self[var]),
                          vmin=vmin, vmax=vmax, cmap=cmap, **kwargs)
 
