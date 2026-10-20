@@ -761,9 +761,9 @@ class Iono(PbData):
 
         return AllSky(self, glon, glat, **kwargs)
 
-    def create_keyostripe(self, varname, glon, glat, dlat=4.455, npix=1024):
+    def create_keostripe(self, varname, glon, glat, dlat=4.455, npix=1024):
         '''
-        Generate a keyogram stripe (geographic south-to-north extraction)
+        Generate a keogram stripe (geographic south-to-north extraction)
         about a target geographic latitude/longitude for variable *varname*.
 
         glon, glat : float
@@ -778,7 +778,7 @@ class Iono(PbData):
 
         from matplotlib.tri import Triangulation, LinearTriInterpolator
 
-        # Create coordinates for keyogram slice.
+        # Create coordinates for keogram slice.
         lats = np.linspace(glat-dlat, glat+dlat, npix)
         lons = np.zeros(lats.size) + glon
 
@@ -880,9 +880,9 @@ class AllSky(PbData):
             self[x] = dmarray(interp(lons, lats),
                               {'units': iono[hemi+x].attrs['units']})
 
-    def extract_keyo(self, var):
+    def extract_keo(self, var):
         '''
-        Extract and return a 1D keyogram (south-to-north slice) of variable
+        Extract and return a 1D keogram (south-to-north slice) of variable
         *var*.
         '''
 
