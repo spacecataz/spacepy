@@ -614,7 +614,7 @@ class Iono(PbData):
     def add_contour_geo(self, varname, n=50, target=None, loc=111,
                         add_cbar=False, cmap='Greens', lc='k', lw=1.,
                         dofill=True, dolines=False, show_night=True,
-                        **kwargs):
+                        vmin=None, vmax=None, **kwargs):
         '''
         Create a contour of variable *varname* using Cartopy and geographic
         coordinates.
@@ -662,10 +662,8 @@ class Iono(PbData):
             Add unfilled monotone contours to plot, either as a stand-alone
             feature (e.g., if `dofill` is **False**) or to accentuate filled
             contours. Default is **False**.
-        maxz : real
+        vmin, vmax : real
             Set the max/min value for the color bar.  Default is set by data.
-        max_colat : real
-            Set the co-latitude range of the plot, in degrees.  Defaults to 40.
         cmap : str
             Set the colormap for filled contours. Default is **Greens**.
         add_cbar : bool
@@ -688,6 +686,7 @@ class Iono(PbData):
 
         import cartopy.crs as ccrs
         from cartopy.feature.nightshade import Nightshade
+        from matplotlib.colors import Normalize
 
         # Get geographic lat/lon and time for convenience.
         tnow = self.attrs['time']
@@ -697,8 +696,15 @@ class Iono(PbData):
         # get the solar position. this allows us to orient noon on top
         # slon, slat = solar_position(tnow)
 
-        # PLOT USING APPROPRIATE STYLE:
-        # with plt.style.context('seaborn-v0_8-poster'):
+        # Set color range:
+        zmin, zmax = self[varname].min(), self[varname].max()
+        if vmin is None:
+            vmin = -zmax if zmin < 0 else 0
+        if vmax is None:
+            vmax = zmax
+        crange = Normalize(vmin=vmin, vmax=vmax)
+        levs = np.linspace(vmin, vmax, n)
+
 
         # Create figure using set_target syntax:
         fig, ax = set_target(target, figsize=(8, 8), loc=loc,
@@ -707,14 +713,14 @@ class Iono(PbData):
 
         if dofill:
             cont = ax.tricontourf(glon.flatten(), glat.flatten(),
-                                  self[varname].flatten(), n,
+                                  self[varname].flatten(), levs, norm=crange,
                                   cmap=cmap, transform=ccrs.PlateCarree(),
                                   **kwargs)
         elif not dolines:
             cnt2 = ax.tricontour(glon.flatten(), glat.flatten(),
-                                 self[varname].flatten(), n, linewidths=lw,
-                                 cmap=cmap, transform=ccrs.PlateCarree(),
-                                 **kwargs)
+                                 self[varname].flatten(), levs, norm=crange,
+                                 linewidths=lw, cmap=cmap,
+                                 transform=ccrs.PlateCarree(), **kwargs)
 
         if dolines and not dofill:
             cnt2 = ax.tricontour(glon.flatten(), glat.flatten(),
