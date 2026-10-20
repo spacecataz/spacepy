@@ -433,11 +433,20 @@ class Iono(PbData):
     def add_contour(self, varname, target=None, n=50, maxz=False,
                     dolines=False, dofill=True, cmap=False, add_cbar=False,
                     label=None, loc=111, xticksize=12, yticksize=12,
-                    max_colat=40, **kwargs):
+                    max_colat=40, lc='k', lw=1., **kwargs):
         '''
         Create a polar contour of variable *var*.  Plot will be either drawn
         on a new matplotlib figure and axes, or you can specify a plot target
         using the *target* kwarg.
+
+        The plot behavior is set by kwargs **dofill** and **dolines**.
+        If **dofill** is true, filled contours will be added only (the
+        default behavior).
+        If **dolines** and **dofill** are both true, accent lines will be added
+        on top of the filled contours.
+        If **dofill** is false, colored, unfilled contours will be added with
+        no accent lines.
+        If only **dolines** is true, only accent lines are added.
 
         Parameters
         ==========
@@ -468,10 +477,11 @@ class Iono(PbData):
             added (see *dolines* kwarg), multiples of three provide coherence
             between filled and unfilled contours.
         dofill : bool, defaults to true
-            Use filled contours.
-        dolines : bool, defaults to True
-            Add unfilled black solid/dashed contours to plot for additional
-            contrast.  Default is **True**.
+            Use filled contours. If false, add unfilled colored contours.
+        dolines : bool, defaults to False
+            Add unfilled monotone contours to plot, either as a stand-alone
+            feature (e.g., if `dofill` is **False**) or to accentuate filled
+            contours. Default is **False**.
         maxz : real
             Set the max/min value for the color bar.  Default is set by data.
         max_colat : real
@@ -492,8 +502,12 @@ class Iono(PbData):
             Size of longitude markers in text points.  Defaults to 12.
         yticksize : int
             Size of latitude markers in text points.  Defaults to 12.
+        lw : float, defaults to 1.
+            Set width of lines for any unfilled contours.
+        lc : Matplotlib color, defaults to 'k'
+            Set color for monochrome line accents.
 
-        Extra keywords are passed to the contourf routine.
+        Extra keywords are passed to the tricontour(f) routine.
 
         '''
         # Get only what we need to decrease runtime.
@@ -504,10 +518,6 @@ class Iono(PbData):
         from matplotlib.pyplot import colorbar
 
         fig, ax = set_target(target, polar=True, loc=loc)
-
-        # If dofill is off, turn on lines.
-        if not dofill:
-            dolines = True
 
         hemi = varname[:2]
 
@@ -554,8 +564,19 @@ class Iono(PbData):
             cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
                                np.array(self[varname]), levs, norm=crange,
                                cmap=cmap, **kwargs)
-        else:
-            cnt1 = None
+        elif not dolines:
+            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                              np.array(self[varname]), levs, norm=crange,
+                              cmap=cmap, linewidths=lw, **kwargs)
+
+        if dolines and not dofill:
+            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
+                              np.array(self[varname]), n//3, colors=lc,
+                              linewidths=lw)
+            # clabel(cnt2,fmt='%3i',fontsize=10)
+
+        # Set contour object to return to caller:
+        contour = cnt1 if dofill else cnt2
 
         # Set xtick label size, increase font of top label.
         labels = ax.get_xticklabels()
@@ -563,15 +584,8 @@ class Iono(PbData):
             lab.set_size(xticksize)
         labels[1].set_size(xticksize*1.25)
 
-        if dolines:
-            nk = int(round(n/3.0))
-            cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
-                              np.array(self[varname]), nk, colors='k')
-            # clabel(cnt2,fmt='%3i',fontsize=10)
-
         if add_cbar:
             cbarticks = MaxNLocator(7)
-            contour = cnt1 if dofill else cnt2
             cbar = colorbar(contour, ticks=cbarticks, shrink=0.75,
                             pad=0.08, ax=ax)
             cbar.set_label(tex_label(self[varname].attrs['units']))
@@ -597,11 +611,22 @@ class Iono(PbData):
         '''For reverse compatability only.'''
         return self.add_contour(*args, **kwargs)
 
-    def add_contour_geo(self, varname, target=None, loc=111, add_cbar=False,
-                        cmap='Greens', dofill=True, dolines=False):
+    def add_contour_geo(self, varname, n=50, target=None, loc=111,
+                        add_cbar=False, cmap='Greens', lc='k', lw=1.,
+                        dofill=True, dolines=False, show_night=True,
+                        **kwargs):
         '''
         Create a contour of variable *varname* using Cartopy and geographic
         coordinates.
+
+        The plot behavior is set by kwargs **dofill** and **dolines**.
+        If **dofill** is true, filled contours will be added only (the
+        default behavior).
+        If **dolines** and **dofill** are both true, accent lines will be added
+        on top of the filled contours.
+        If **dofill** is false, colored, unfilled contours will be added with
+        no accent lines.
+        If only **dolines** is true, only accent lines are added.
 
         Parameters
         ==========
@@ -632,20 +657,17 @@ class Iono(PbData):
             added (see *dolines* kwarg), multiples of three provide coherence
             between filled and unfilled contours.
         dofill : bool, defaults to true
-        dolines : bool, defaults to True
-            Add unfilled black solid/dashed contours to plot for additional
-            contrast.  Default is **True**.
+            Use filled contours. If false, add unfilled colored contours.
+        dolines : bool, defaults to False
+            Add unfilled monotone contours to plot, either as a stand-alone
+            feature (e.g., if `dofill` is **False**) or to accentuate filled
+            contours. Default is **False**.
         maxz : real
             Set the max/min value for the color bar.  Default is set by data.
         max_colat : real
             Set the co-latitude range of the plot, in degrees.  Defaults to 40.
         cmap : str
-            Set the colormap.  Default is to use Matplotlib's "Reds" for data
-            that is strictly positive and "Seismic" for diverging data.
-            Alternatively, legacy Ridley Ionosphere Model color maps can be
-            loaded using "l_wr" (white red) or "l_bwr" (blue-white-red),
-            where the "l\\_" prefix indicates legacy and not Matplotlib color
-            maps.
+            Set the colormap for filled contours. Default is **Greens**.
         add_cbar : bool
             Add colorbar to plot.  Default is **False** which will
             not add one to the plot.
@@ -655,13 +677,17 @@ class Iono(PbData):
             Size of longitude markers in text points.  Defaults to 12.
         yticksize : int
             Size of latitude markers in text points.  Defaults to 12.
+        lw : float, defaults to 1.
+            Set width of lines for any unfilled contours.
+        lc : Matplotlib color, defaults to 'k'
+            Set color for monochrome line accents.
 
-        Extra keywords are passed to the contourf routine.
+        Extra keywords are passed to the tricontour(f) routine.
 
         '''
 
         import cartopy.crs as ccrs
-        # from cartopy.feature.nightshade import Nightshade
+        from cartopy.feature.nightshade import Nightshade
 
         # Get geographic lat/lon and time for convenience.
         tnow = self.attrs['time']
@@ -680,19 +706,26 @@ class Iono(PbData):
         # note: projection=ccrs.Orthographic(slon + 180, 90))
 
         if dofill:
-            cont = ax.scatter(glon, glat, c=self[varname],
-                              cmap=cmap, transform=ccrs.PlateCarree())
-        else:
-            cont = None
+            cont = ax.tricontourf(glon.flatten(), glat.flatten(),
+                                  self[varname].flatten(), n,
+                                  cmap=cmap, transform=ccrs.PlateCarree(),
+                                  **kwargs)
+        elif not dolines:
+            cnt2 = ax.tricontour(glon.flatten(), glat.flatten(),
+                                 self[varname].flatten(), n, linewidths=lw,
+                                 cmap=cmap, transform=ccrs.PlateCarree(),
+                                 **kwargs)
 
-        if dolines:
-            cont2 = ax.tricontour(glon.flatten(), glat.flatten(),
-                                  self[varname].flatten(), int(50/3),
-                                  colors='k', linewidths=1,
-                                  transform=ccrs.PlateCarree(), )
+        if dolines and not dofill:
+            cnt2 = ax.tricontour(glon.flatten(), glat.flatten(),
+                                 self[varname].flatten(), n//3,
+                                 colors=lc, linewidths=lw,
+                                 transform=ccrs.PlateCarree(), )
+
+        # Set contour object to return to caller:
+        contour = cont if dofill else cnt2
 
         if add_cbar:
-            contour = cont if dofill else cont2
             cbar = plt.colorbar(contour, shrink=0.75, pad=0.08, ax=ax)
             cbar.set_label(tex_label(self[varname].attrs['units']))
         else:
@@ -700,11 +733,12 @@ class Iono(PbData):
 
         # North pole:
         # ax.plot(0, 90, 'ro', transform=ccrs.PlateCarree())
-        # ax.add_feature(Nightshade(tnow, alpha=0.2))
+        if show_night:
+            ax.add_feature(Nightshade(tnow, alpha=0.2))
         ax.coastlines()
         ax.set_global()
 
-        return fig, ax, cont, cbar
+        return fig, ax, contour, cbar
 
     def create_asi(self, glon, glat, **kwargs):
         '''
