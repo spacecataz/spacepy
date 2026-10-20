@@ -761,6 +761,41 @@ class Iono(PbData):
 
         return AllSky(self, glon, glat, **kwargs)
 
+    def create_keyostripe(self, varname, glon, glat, dlat=4.455, npix=1024):
+        '''
+        Generate a keyogram stripe (geographic south-to-north extraction)
+        about a target geographic latitude/longitude for variable *varname*.
+
+        glon, glat : float
+            Geographic longitude and latitude of virtual allsky, in degrees.
+
+        dlat : float, defaults to 4.455
+            Half-angle view cone in degrees.
+
+        npix : int, defaults to 1024
+            The number of points ("pixels") to extract.
+        '''
+
+        from matplotlib.tri import Triangulation, LinearTriInterpolator
+
+        # Create coordinates for keyogram slice.
+        lats = np.linspace(glat-dlat, glat+dlat, npix)
+        lons = np.zeros(lats.size) + glon
+
+        # Wrap over pole as necessary:
+        mask = lats > 90
+        lats[mask] = 180 - lats[mask]
+        lons[mask] += 180
+
+        # Set up interpolator:
+        self.calc_geo_coords()
+        triang = Triangulation(self['n_glon'].flatten(),
+                               self['n_glat'].flatten())
+        triinterp = LinearTriInterpolator(triang, self[varname].flatten())
+
+        # Interpolate and return:
+        return lons, lats, triinterp(lons, lats)
+
 
 class AllSky(PbData):
     '''
