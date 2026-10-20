@@ -848,7 +848,7 @@ class AllSky(PbData):
         hemi = 'n_' if lat > 0 else 's_'
 
         # Create field-of-view in geographic coordinates:
-        etas, alphas = np.meshgrid(np.arange(-fov, fov, deta),
+        etas, alphas = np.meshgrid(np.arange(0, fov, deta),
                                    np.arange(0, 360., dalpha))
 
         # Now turn that into a set of lat-lon values
@@ -989,7 +989,7 @@ class AllSky(PbData):
 
         fig, ax = set_target(target, polar=True, loc=loc)
         cnt1 = ax.pcolor(np.deg2rad(self['alpha']),
-                         np.abs(self['eta']), np.array(self[var]),
+                         self['eta'], np.array(self[var]),
                          vmin=vmin, vmax=vmax, cmap=cmap, **kwargs)
 
         if add_cbar:
