@@ -839,6 +839,10 @@ class AllSky(PbData):
 
         super(AllSky, self).__init__(*args, **kwargs)
 
+        # Cartopy & associates work better if West longitude is negative:
+        if lon > 180:
+            lon -= 360
+
         # Save the file name that created the object.
         self.attrs['file'] = iono.attrs['file']
         self.attrs['glon'] = lon
