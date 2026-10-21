@@ -561,15 +561,18 @@ class Iono(PbData):
 
         # Create contour:
         if dofill:
+            # Plot filled contours.
             cnt1 = ax.contourf(self[hemi+'psi']*pi/180.0+pi/2., theta,
                                np.array(self[varname]), levs, norm=crange,
                                cmap=cmap, **kwargs)
         elif not dolines:
+            # Plot unfilled contours WITHOUT monochrome lines.
             cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
                               np.array(self[varname]), levs, norm=crange,
                               cmap=cmap, linewidths=lw, **kwargs)
 
-        if dolines and not dofill:
+        if dolines:
+            # Add monochrome lines.
             cnt2 = ax.contour(self[hemi+'psi']*pi/180.0+pi/2., theta,
                               np.array(self[varname]), n//3, colors=lc,
                               linewidths=lw)
@@ -605,7 +608,7 @@ class Iono(PbData):
             ax.text(pi/4., 90.-theta, txt, color='w', weight='heavy', **opts)
             ax.text(pi/4., 90.-theta, txt, color='k', weight='light', **opts)
 
-        return fig, ax, cnt1, cbar
+        return fig, ax, contour, cbar
 
     def add_cont(self, *args, **kwargs):
         '''For reverse compatability only.'''
@@ -698,13 +701,13 @@ class Iono(PbData):
 
         # Set color range:
         zmin, zmax = self[varname].min(), self[varname].max()
+        absmax = max(zmax, np.abs(zmin))
         if vmin is None:
-            vmin = -zmax if zmin < 0 else 0
+            vmin = -absmax if zmin < 0 else 0
         if vmax is None:
-            vmax = zmax
+            vmax = absmax
         crange = Normalize(vmin=vmin, vmax=vmax)
         levs = np.linspace(vmin, vmax, n)
-
 
         # Create figure using set_target syntax:
         fig, ax = set_target(target, figsize=(8, 8), loc=loc,
@@ -712,17 +715,20 @@ class Iono(PbData):
         # note: projection=ccrs.Orthographic(slon + 180, 90))
 
         if dofill:
+            # Plot filled contours.
             cont = ax.tricontourf(glon.flatten(), glat.flatten(),
                                   self[varname].flatten(), levs, norm=crange,
                                   cmap=cmap, transform=ccrs.PlateCarree(),
                                   **kwargs)
         elif not dolines:
+            # Plot unfilled contours WITHOUT monochrome lines.
             cnt2 = ax.tricontour(glon.flatten(), glat.flatten(),
                                  self[varname].flatten(), levs, norm=crange,
                                  linewidths=lw, cmap=cmap,
                                  transform=ccrs.PlateCarree(), **kwargs)
 
-        if dolines and not dofill:
+        if dolines:
+            # Add monochrome lines.
             cnt2 = ax.tricontour(glon.flatten(), glat.flatten(),
                                  self[varname].flatten(), n//3,
                                  colors=lc, linewidths=lw,
