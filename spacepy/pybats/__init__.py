@@ -1186,8 +1186,10 @@ class IdlFile(PbData):
                 raise ValueError(f"No frame found with {tol}s of {reftime}")
         elif isinstance(reftime, float):
             # Float: find iframe within TOL seconds of given runtime
-            iframe = np.argmin(np.abs(self.attrs['runtimes'] - reftime))
-            raise ValueError(f"No frame found with {tol}s of {reftime}")
+            tdiff = np.abs(self.attrs['runtimes'] - reftime)
+            if tdiff.min() > tol:
+                raise ValueError(f"No frame found with {tol}s of {reftime}")
+            iframe = np.argmin(tdiff)
 
         # Ensure that given frame exists within object:
         if iframe < -self.attrs['nframe'] or iframe >= self.attrs['nframe']:
