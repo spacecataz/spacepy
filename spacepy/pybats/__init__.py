@@ -1174,7 +1174,7 @@ class IdlFile(PbData):
 
         import datetime as dt
 
-        if isinstance(reftime, int):
+        if isinstance(reftime, (int, np.int32, np.int64)):
             # Integer: jump to iframe.
             iframe = reftime
         elif isinstance(reftime, dt.datetime):
@@ -1190,6 +1190,8 @@ class IdlFile(PbData):
             if tdiff.min() > tol:
                 raise ValueError(f"No frame found with {tol}s of {reftime}")
             iframe = np.argmin(tdiff)
+        else:
+            raise TypeError(f'Unknown type for reftime ({type(reftime)})')
 
         # Ensure that given frame exists within object:
         if iframe < -self.attrs['nframe'] or iframe >= self.attrs['nframe']:
